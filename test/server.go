@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"time"
+	"yt/chatbot/lib/utils"
 	"yt/chatbot/lib/utils/log"
 	"yt/chatbot/server/chat"
 
@@ -122,7 +123,7 @@ func getLeaveChannelMessage(channel string, user string) string {
 // Join the channel
 // Send message to channel
 // Leave channel
-func joinChannelForSubscriber(channel string, user string) {
+func joinChannelForSubscriber(channel string, user string) bool {
 
 	// Send join-channel 'channel2' request
 	//
@@ -136,7 +137,7 @@ func joinChannelForSubscriber(channel string, user string) {
 
 	if !validateResponse(&msg, resp) {
 		logger.Error("Join channel request failed.")
-		return
+		return false
 	}
 
 	// Send message 'send-msg' to channel 'channel1'
@@ -151,7 +152,7 @@ func joinChannelForSubscriber(channel string, user string) {
 
 	if !validateResponse(&msg, resp) {
 		logger.Error("Send message to channel failed.")
-		return
+		return false
 	}
 
 	// TODO: server closes connection too early. Check.
@@ -167,25 +168,38 @@ func joinChannelForSubscriber(channel string, user string) {
 	resp, err = sendMessageWaitForResponse(msg)
 	if err != nil {
 		logger.Error("Failed to send 'leave-channel' message: " + err.Error())
+		return false
 	}
 
 	if !validateResponse(&msg, resp) {
 		logger.Error("Leave channel request failed.")
+		return false
 	}
 
 	passedTests++
+	return true
 }
 
-func runTest(channel string, user string) {
+func runTest(channel string, user string) (int, int) {
 
 	EXPECTED_PASSED_TESTS++
 
-	joinChannelForSubscriber(channel+"1", user)
-	joinChannelForSubscriber(channel+"2", user)
+	timer := utils.PerfTimer{}
+	timer.Start()
 
+	if !joinChannelForSubscriber(channel+"1", user) {
+		return EXPECTED_PASSED_TESTS, passedTests
+	}
+	if !joinChannelForSubscriber(channel+"2", user) {
+		return EXPECTED_PASSED_TESTS, passedTests
+	}
+
+	timer.Stop()
+	logger.Debug(fmt.Sprintf("Test elapsed(ms): %.03f", timer.ElapsedMs()))
+	return EXPECTED_PASSED_TESTS, passedTests
 }
 
-func runRegressionTest(channel string, user string, repeat int) {
+func runRegressionTest(channel string, user string, repeat int) (int, int) {
 
 	for loops := 0; loops < repeat; loops++ {
 
@@ -195,6 +209,7 @@ func runRegressionTest(channel string, user string, repeat int) {
 		<-timer.C
 	}
 
+	return EXPECTED_PASSED_TESTS, passedTests
 }
 
 func main() {
@@ -211,25 +226,35 @@ func main() {
 	go processResponseMessage(conn)
 
 	EXPECTED_PASSED_TESTS = 0
-	passedTests = 0
+	passedTests = -1
 
 	channel := "channel"
 	user := "santzky"
 
 	run := 1
+	repeatCount := 500
+
+	expected := 0
+	passed := 0
+
+	timer := utils.PerfTimer{}
+	timer.Start()
 
 	if run == 0 {
-		runTest(channel, user)
+		expected, passed = runTest(channel, user)
 	} else {
-		runRegressionTest(channel, user, 700)
+		expected, passed = runRegressionTest(channel, user, repeatCount)
 	}
 
-	if EXPECTED_PASSED_TESTS == passedTests-1 {
-		logger.Info(fmt.Sprintf("All %d tests passed!", EXPECTED_PASSED_TESTS))
+	if expected == passedTests {
+		logger.Info(fmt.Sprintf("All %d tests passed!", expected))
 	} else {
-		logger.Warn(fmt.Sprintf("%d tests passed out of %d", passedTests-1, EXPECTED_PASSED_TESTS))
+		logger.Warn(fmt.Sprintf("%d tests passed out of %d", passed, expected))
 	}
 
 	logger.Warn("Closing socket connection.")
 	conn.Close()
+
+	timer.Stop()
+	logger.Debug(fmt.Sprintf("Test duration(ms): %.03f", timer.ElapsedMs()))
 }

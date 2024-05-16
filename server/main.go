@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"yt/chatbot/lib/utils"
 	"yt/chatbot/lib/utils/log"
 	"yt/chatbot/lib/workermanager"
 	"yt/chatbot/server/chat"
@@ -45,10 +47,17 @@ func listenAndServe(server *http.Server) {
 
 func main() {
 
-	// Profiler
-	go func() {
-		http.ListenAndServe("localhost:6060", nil)
-	}()
+	if config.GetValue("ENV") == "development" {
+		// Profiler. See: net/http/pprof
+		go func() {
+			http.ListenAndServe("localhost:6060", nil)
+		}()
+	}
+
+	parentTimer := utils.PerfTimer{}
+	parentTimer.Start()
+
+	timer := utils.PerfTimer{}
 
 	logger.Info("Starting server...")
 	logger.Info("Start persistence services...")
@@ -66,6 +75,9 @@ func main() {
 	//
 
 	addr := config.GetValue("PUBSUB_SERVER_HOST") + ":" + config.GetValue("PUBSUB_SERVER_PORT")
+
+	timer.Start()
+
 	rds := redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: config.GetValue("PUBSUB_SERVER_PASS"),
@@ -78,6 +90,9 @@ func main() {
 		return
 	}
 
+	timer.Stop()
+	logger.Debug(fmt.Sprintf("Redis startup time(ms): %d", timer.ElapsedMs()))
+
 	// Setup Data sources
 	//
 
@@ -88,9 +103,14 @@ func main() {
 	//
 	logger.Info("Starting chat server...")
 
+	timer.Start()
+
 	wsServer := chat.NewServer(rds, &channelDs, &subscriberDs)
 	// Start chat now - creates new thread and listen in the background
 	wsServer.Start()
+
+	timer.Stop()
+	logger.Debug(fmt.Sprintf("Websocket server startup time(ms): %d", timer.ElapsedMs()))
 
 	// Start web server
 	//
@@ -107,6 +127,10 @@ func main() {
 	// Listen for OS interrupts
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt) // Notify for interrupt signals (e.g., SIGINT)
+
+	parentTimer.Stop()
+	logger.Debug(fmt.Sprintf("Chat server startup time(ms): %d", parentTimer.ElapsedMs()))
+
 	// Block until we get an interrupt signal
 	<-sigCh
 	close(sigCh)
