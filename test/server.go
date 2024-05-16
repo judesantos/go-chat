@@ -3,10 +3,11 @@ package main
 import (
 	"fmt"
 	"net/url"
-	"strings"
 	"time"
 	"yt/chatbot/lib/utils/log"
+	"yt/chatbot/server/chat"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -16,8 +17,18 @@ var (
 	wsTarget = "ws://localhost:8080/ws"
 	conn     *websocket.Conn
 
+	EXPECTED_PASSED_TESTS = 0
+
 	passedTests = 0
+
+	MSG_JOIN_CHANNEL_FMT  = `{"id":"%s", "messagetype": 0, "requesttype":"join-channel", "channel":"%s", "message":"hello %s", "subscriber":{"name":"%s"}}`
+	MSG_SEND_CHANNEL_FMT  = `{"id":"%s", "messagetype": 0, "requesttype":"send-msg", "channel":"%s", "message":"hello %s, how are you doing?", "subscriber":{"name":"%s"}}`
+	MSG_LEAVE_CHANNEL_FMT = `{"id":"%s", "messagetype": 0, "requesttype":"leave-channel", "channel":"%s", "message":"goodbye, %s!", "subscriber":{"name":"%s"}}`
+
+	msgCh = make(chan *chat.Message)
 )
+
+const EXPECTED_TEST_RESPONSES = 6
 
 func getConnection(serverURL string) *websocket.Conn {
 
@@ -35,65 +46,112 @@ func getConnection(serverURL string) *websocket.Conn {
 	return conn
 }
 
-func processResponseMessage(conn *websocket.Conn, done chan struct{}, cb func(status int)) {
-
-	const EXPECTED_RESPONSE_COUNT = 6
-	responseCount := 0
+func processResponseMessage(conn *websocket.Conn) {
 
 	for {
-		_, message, err := conn.ReadMessage()
+		var message chat.Message
+		err := conn.ReadJSON(&message)
 		if err != nil {
-			logger.Error("Error reading WebSocket message: " + err.Error())
-			done <- struct{}{}
-			cb(-1)
-		} else {
-			logger.Info("Received message from server: " + string(message))
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				logger.Error("WebSocket close error: " + err.Error())
+			}
+			// Socket closed from parent
+			return
 		}
 
-		msg := string(message)
+		msgBytes, _ := message.Encode()
+		msg := string(*msgBytes)
+		logger.Info("Received message from server: " + msg)
 
-		// Process expected responses - exit when done
-		//
-
-		if strings.Contains(msg, "joined-channel") {
-			responseCount++
-		}
-		if strings.Contains(msg, "hello channel") {
-			responseCount++
-		}
-		if strings.Contains(msg, "how are you doing") {
-			responseCount++
-		}
-		if strings.Contains(msg, "left-channel") {
-			responseCount++
-		}
-
-		if responseCount >= EXPECTED_RESPONSE_COUNT {
-			logger.Info("All expected messages received. Quitting...")
-			passedTests++
-			done <- struct{}{}
-			cb(0)
-		}
-
+		msgCh <- &message
 	}
 }
 
-func createChannel1Subscriber1() {
+func validateResponse(send *string, outMsg *chat.Message) bool {
 
-	// Send join-channel 'channel1' request
+	var inMsg chat.Message
+
+	inMsg.Decode(send)
+
+	if inMsg.Id == outMsg.Id &&
+		inMsg.RequestType == outMsg.RequestType &&
+		outMsg.MessageType == chat.MSGTYPE_ACK &&
+		outMsg.Status == "success" {
+
+		return true
+	}
+
+	return false
+}
+
+func sendMessageWaitForResponse(msg string) (*chat.Message, error) {
+
+	err := conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if err != nil {
+		return nil, err
+	}
+
+	err = conn.WriteMessage(websocket.TextMessage, []byte(msg))
+	if err != nil {
+		return nil, err
+	}
+
+	// Wait for response.
+	// Block until response received.
+	resp := <-msgCh
+
+	return resp, nil
+}
+
+func getJoinChannelMessage(channel string, user string) string {
+	id := uuid.New().String()
+	return fmt.Sprintf(MSG_JOIN_CHANNEL_FMT, id, channel, channel, user)
+}
+
+func getSendChannelMessage(channel string, user string) string {
+	id := uuid.New().String()
+	return fmt.Sprintf(MSG_SEND_CHANNEL_FMT, id, channel, channel, user)
+}
+
+func getLeaveChannelMessage(channel string, user string) string {
+	id := uuid.New().String()
+	return fmt.Sprintf(MSG_LEAVE_CHANNEL_FMT, id, channel, channel, user)
+}
+
+// Create subscriber session
+// Join the channel
+// Send message to channel
+// Leave channel
+func joinChannelForSubscriber(channel string, user string) {
+
+	// Send join-channel 'channel2' request
 	//
-	msg := `{"requesttype":"join-channel", "channel":"channel1", "message":"hello channel1", "subscriber":{"name":"santzky"}}`
-	err := conn.WriteMessage(websocket.TextMessage, []byte(msg))
+
+	msg := getJoinChannelMessage(channel, user)
+	//logger.Info("Send message: " + msg)
+	resp, err := sendMessageWaitForResponse(msg)
 	if err != nil {
 		logger.Error("Failed to send 'join-channel' message: " + err.Error())
 	}
 
+	if !validateResponse(&msg, resp) {
+		logger.Error("Join channel request failed.")
+		return
+	}
+
 	// Send message 'send-msg' to channel 'channel1'
 	//
-	msg = `{"requesttype":"send-msg", "channel":"channel1", "message":"hello channel1, how are you doing?", "subscriber":{"name":"santzky"}}`
-	err = conn.WriteMessage(websocket.TextMessage, []byte(msg))
+
+	msg = getSendChannelMessage(channel, user)
+	//logger.Info("Send message: " + msg)
+	resp, err = sendMessageWaitForResponse(msg)
 	if err != nil {
 		logger.Error("Failed to send 'send-msg' message: " + err.Error())
+	}
+
+	if !validateResponse(&msg, resp) {
+		logger.Error("Send message to channel failed.")
+		return
 	}
 
 	// TODO: server closes connection too early. Check.
@@ -103,123 +161,40 @@ func createChannel1Subscriber1() {
 
 	// Send leave-channel 'channel1' request
 	//
-	msg = `{"requesttype":"leave-channel", "channel":"channel1", "message":"goodbye, channel1!", "subscriber":{"name":"santzky"}}`
-	err = conn.WriteMessage(websocket.TextMessage, []byte(msg))
+
+	msg = getLeaveChannelMessage(channel, user)
+	//logger.Info("Send message: " + msg)
+	resp, err = sendMessageWaitForResponse(msg)
 	if err != nil {
 		logger.Error("Failed to send 'leave-channel' message: " + err.Error())
 	}
+
+	if !validateResponse(&msg, resp) {
+		logger.Error("Leave channel request failed.")
+	}
+
+	passedTests++
 }
 
-func createChannel2Subscriber1() {
+func runTest(channel string, user string) {
 
-	// Send join-channel 'channel2' request
-	//
-	msg := `{"requesttype":"join-channel", "channel":"channel2", "message":"hello channel1", "subscriber":{"name":"santzky"}}`
-	err := conn.WriteMessage(websocket.TextMessage, []byte(msg))
-	if err != nil {
-		logger.Error("Failed to send 'join-channel' message: " + err.Error())
-	}
+	EXPECTED_PASSED_TESTS++
 
-	// Send message 'send-msg' to channel 'channel2'
-	//
-	msg = `{"requesttype":"send-msg", "channel":"channel2", "message":"hello channel2, how are you doing?", "subscriber":{"name":"santzky"}}`
-	err = conn.WriteMessage(websocket.TextMessage, []byte(msg))
-	if err != nil {
-		logger.Error("Failed to send 'send-msg' message: " + err.Error())
-	}
-
-	// TODO: server closes connection too early. Check.
-	//
-	timer := time.NewTimer(5 * time.Millisecond)
-	<-timer.C
-
-	// Send leave-channel 'channel2' request
-	//
-	msg = `{"requesttype":"leave-channel", "channel":"channel2", "message":"goodbye, channel2!", "subscriber":{"name":"santzky"}}`
-	err = conn.WriteMessage(websocket.TextMessage, []byte(msg))
-	if err != nil {
-		logger.Error("Failed to send 'leave-channel' message: " + err.Error())
-	}
-}
-
-func runTest() {
-
-	done := make(chan struct{})
-	go processResponseMessage(conn, done, func(st int) {
-		if st == 0 {
-			logger.Info("All tests passed")
-		} else {
-			logger.Error("Test failed.")
-		}
-	})
-
-	createChannel1Subscriber1()
-	createChannel2Subscriber1()
-
-	<-done
+	joinChannelForSubscriber(channel+"1", user)
+	joinChannelForSubscriber(channel+"2", user)
 
 }
 
-func runSingleTest() {
+func runRegressionTest(channel string, user string, repeat int) {
 
-	conn := getConnection(wsTarget)
-	if conn == nil {
-		return
-	}
+	for loops := 0; loops < repeat; loops++ {
 
-	runTest()
-
-	logger.Warn("Closing socket connection.")
-	conn.Close()
-}
-
-func runTestOfTests() {
-
-	conn := getConnection(wsTarget)
-	if conn == nil {
-		return
-	}
-
-	loops := 0
-
-	for {
-		if loops > 10 {
-			break
-		}
-		loops++
-
-		runTest()
+		runTest(channel, user)
 
 		timer := time.NewTimer(5 * time.Millisecond)
 		<-timer.C
 	}
 
-	logger.Warn("Closing socket connection.")
-	conn.Close()
-}
-
-func runSuperTest() {
-
-	const EXPECTEDPASSEDTESTS = 10 * 10
-	loops := 0
-
-	for {
-		if loops > 10 {
-			break
-		}
-		loops++
-
-		runTestOfTests()
-
-		timer := time.NewTimer(5 * time.Millisecond)
-		<-timer.C
-	}
-
-	if EXPECTEDPASSEDTESTS == passedTests {
-		logger.Info(fmt.Sprintf("All %d tests passed!", EXPECTEDPASSEDTESTS))
-	} else {
-		logger.Warn(fmt.Sprintf("%d tests passed out of %d", passedTests, EXPECTEDPASSEDTESTS))
-	}
 }
 
 func main() {
@@ -227,17 +202,34 @@ func main() {
 	// Send subscriber 'santzky' join request
 	//
 	logger := log.GetLogger()
+
 	defer func() {
 		logger.Close()
 	}()
+	conn := getConnection(wsTarget)
+
+	go processResponseMessage(conn)
+
+	EXPECTED_PASSED_TESTS = 0
+	passedTests = 0
+
+	channel := "channel"
+	user := "santzky"
 
 	run := 1
 
 	if run == 0 {
-		runSingleTest()
-	} else if run == 1 {
-		runTestOfTests()
+		runTest(channel, user)
 	} else {
-		runSuperTest()
+		runRegressionTest(channel, user, 700)
 	}
+
+	if EXPECTED_PASSED_TESTS == passedTests-1 {
+		logger.Info(fmt.Sprintf("All %d tests passed!", EXPECTED_PASSED_TESTS))
+	} else {
+		logger.Warn(fmt.Sprintf("%d tests passed out of %d", passedTests-1, EXPECTED_PASSED_TESTS))
+	}
+
+	logger.Warn("Closing socket connection.")
+	conn.Close()
 }

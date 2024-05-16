@@ -19,7 +19,7 @@ const (
 	PONG_INTERVAL = 60 * time.Second
 	PING_INTERVAL = (PONG_INTERVAL * 9) / 10
 
-	WRITE_DELAY = 10 * time.Millisecond
+	WRITE_DELAY = 10 * time.Second
 )
 
 type Session struct {
@@ -70,7 +70,7 @@ func (m *Session) requestHandler() {
 	logger.Trace("Listen for subscriber messages...")
 
 	m.wsConn.SetReadLimit(MAX_MESSAGE_BUFFER_SIZE)
-	m.wsConn.SetReadDeadline(time.Now().Add(PONG_INTERVAL))
+	m.wsConn.SetReadDeadline(time.Now().Add(WRITE_DELAY))
 	m.wsConn.SetPongHandler(func(string) error {
 		m.wsConn.SetReadDeadline(time.Now().Add(PONG_INTERVAL))
 		return nil
@@ -98,7 +98,7 @@ func (m *Session) requestHandler() {
 	logger.Trace("going away. Bye!")
 }
 
-// Polling response handler - send response
+// Polling response handler - send response through websocker writer
 func (m *Session) responseHandler() {
 
 	logger.Trace("Listen for session response...")
@@ -199,10 +199,15 @@ func (m *Session) processRequest(msg []byte) {
 		return
 	}
 
+	// Process subscriber request.
+	// Send reply using same message id, requesttype
+	//
+
 	message.Session = m
 
 	switch message.RequestType {
 	case ACTION_SEND_MESSAGE:
+
 		notInChannel := true
 		for ch := range m.channels {
 			if ch.Name == message.ChannelName {
@@ -210,28 +215,97 @@ func (m *Session) processRequest(msg []byte) {
 				notInChannel = false
 			}
 		}
+
+		message.MessageType = MSGTYPE_ACK
+
 		if notInChannel {
 			// Session is not subscribed in the channel
 			// Inform subscriber as so.
-			resp := Message{
-				RequestType: ACTION_NOTSUBSCRIBED_CHANNEL,
-				ChannelName: message.ChannelName,
-				Session:     m,
-				Message:     "Please subscribe to " + message.ChannelName,
-			}
+			message.Message = "Please subscribe to " + message.ChannelName
+			message.Status = STATUS_FAILED
 
-			encoded, err := resp.Encode()
+			encoded, err := message.Encode()
 			if err != nil {
 				logger.Error("Encoding failed: " + err.Error())
-				return
+			} else {
+				m.Msg <- *encoded
 			}
-			m.Msg <- *encoded
+		} else {
+
+			message.Message = "Message sent to " + message.ChannelName
+			message.Status = STATUS_SUCCESS
+
+			encoded, err := message.Encode()
+			if err != nil {
+				logger.Error("Encoding failed: " + err.Error())
+			} else {
+				m.Msg <- *encoded
+			}
 		}
 
 	case ACTION_JOIN_CHANNEL:
-		m.joinChannel(message.ChannelName, message.Session.Subscriber)
+
+		message.MessageType = MSGTYPE_ACK
+		ok, err := m.joinChannel(message.ChannelName, message.Session.Subscriber)
+
+		if err != nil {
+
+			logger.Error("Failed to join channel: " + err.Error())
+
+			message.Message = "Can not join channel " + message.ChannelName
+			message.Status = STATUS_FAILED
+
+			encoded, err := message.Encode()
+			if err != nil {
+				logger.Error("Encoding failed: " + err.Error())
+			} else {
+				m.Msg <- *encoded
+			}
+		} else if ok {
+			message.Message = "Welcome to " + message.ChannelName
+			message.RequestSubType = ACTION_JOINED_CHANNEL
+		} else {
+			message.Message = "Already joined " + message.ChannelName
+			message.RequestSubType = ACTION_JOINED_CHANNEL
+		}
+
+		message.Status = STATUS_SUCCESS
+		encoded, err := message.Encode()
+		if err != nil {
+			logger.Error("Encoding failed: " + err.Error())
+		} else {
+			m.Msg <- *encoded
+		}
+
 	case ACTION_LEAVE_CHANNEL:
-		m.leaveChannel(&message)
+
+		message.MessageType = MSGTYPE_ACK
+		err := m.leaveChannel(message.ChannelName)
+
+		if err != nil {
+			message.Message = "Failed to leave " + message.ChannelName
+			message.Status = STATUS_FAILED
+
+			encoded, err := message.Encode()
+			if err != nil {
+				logger.Error("Encoding failed: " + err.Error())
+			} else {
+				m.Msg <- *encoded
+			}
+
+		} else {
+			message.Message = "Bye!"
+			message.RequestSubType = ACTION_LEFT_CHANNEL
+			message.Status = STATUS_SUCCESS
+
+			encoded, err := message.Encode()
+			if err != nil {
+				logger.Error("Encoding failed: " + err.Error())
+			} else {
+				m.Msg <- *encoded
+			}
+		}
+
 	case ACTION_PRIVATE_CHANNEL:
 		m.joinPrivateChannel(&message)
 	default:
@@ -256,12 +330,11 @@ func (m *Session) joinPrivateChannel(message *Message) {
 
 }
 
-func (m *Session) leaveChannel(message *Message) {
+func (m *Session) leaveChannel(channelName string) error {
 
-	channel, err := m.wsSrvr.GetChannel(message.ChannelName)
+	channel, err := m.wsSrvr.GetChannel(channelName)
 	if err != nil || channel == nil {
-		logger.Error(err.Error())
-		return
+		return err
 	}
 
 	// De-enlist session from the channel list
@@ -269,24 +342,22 @@ func (m *Session) leaveChannel(message *Message) {
 	delete(m.channels, channel)
 
 	// Notify that we joined the room.
-	resp := Message{
-		RequestType: ACTION_LEFT_CHANNEL,
-		ChannelName: message.ChannelName,
-		Session:     m,
-	}
+	//resp := NewMessage(MSGTYPE_BCAST)
+	//resp.RequestType = ACTION_LEFT_CHANNEL
+	//resp.ChannelName = channelName
+	//resp.Session = m
 
-	encoded, err := resp.Encode()
-	if err != nil {
-		logger.Error("Encoding failed: " + err.Error())
-		return
-	}
+	//encoded, err := resp.Encode()
+	//if err != nil {
+	//	return err
+	//}
 
-	// Send joined message to all subscribers on the channel
-	m.Msg <- *encoded
-
+	//// Send joined message to all subscribers on the channel
+	//m.Msg <- *encoded
+	return nil
 }
 
-func (m *Session) joinChannel(channelName string, subscriber model.ISubscriber) {
+func (m *Session) joinChannel(channelName string, subscriber model.ISubscriber) (bool, error) {
 
 	var channel *Channel
 	var err error
@@ -303,15 +374,14 @@ func (m *Session) joinChannel(channelName string, subscriber model.ISubscriber) 
 
 		channel, err = m.wsSrvr.GetChannel(channelName)
 		if err != nil {
-			logger.Error(err.Error())
-			return
+			return false, err
 		}
 
 		m.channels[channel] = true
 	}
 
 	if subscriber == nil && channel.IsPrivate() {
-		return
+		return true, nil
 	}
 
 	exists := false
@@ -322,24 +392,27 @@ func (m *Session) joinChannel(channelName string, subscriber model.ISubscriber) 
 		}
 	}
 
-	if !exists {
-		// Do not register same session
-		channel.registerSession <- m
-		// Notify that we joined the room.
-		message := Message{
-			RequestType: ACTION_JOINED_CHANNEL,
-			ChannelName: channelName,
-			Session:     m,
-		}
+	//if !exists {
+	//	// Do not register same session
+	//	channel.registerSession <- m
+	//	// Notify that we joined the room.
+	//	message := NewMessage(MSGTYPE_BCAST)
+	//	message.RequestType = ACTION_JOINED_CHANNEL
+	//	message.ChannelName = channelName
+	//	message.Session = m
 
-		encoded, err := message.Encode()
-		if err != nil {
-			logger.Error("Encoding failed: " + err.Error())
-			return
-		}
+	//	encoded, err := message.Encode()
+	//	if err != nil {
+	//		return err
+	//	}
 
-		// Send joined message to all subscribers on the channel
-		m.Msg <- *encoded
+	//	// Send joined message to all subscribers on the channel
+	//	m.Msg <- *encoded
+	//}
+
+	if exists {
+		return false, nil
+	} else {
+		return true, nil
 	}
-
 }

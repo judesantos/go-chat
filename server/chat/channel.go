@@ -128,7 +128,6 @@ func (m *Channel) Start() {
 		logger.Trace("Setup pubsub channels")
 
 		ch := pubsub.Channel()
-
 		done <- struct{}{} // Ready. Unblock parent.
 
 		// Broadcast new subscriber to members of channel
@@ -146,9 +145,18 @@ func (m *Channel) Start() {
 				}
 				terminate = true
 			case msg := <-ch:
+				message := Message{}
+				err := message.Decode(&msg.Payload)
+				if err != nil {
+					logger.Error(err.Error())
+					return
+				}
 				for sess := range m.sessions {
-					logger.Debug("Send message to session: " + sess.Subscriber.Name)
-					sess.Msg <- []byte(msg.Payload)
+					// Do not broadcast back to sender
+					if message.Session.Subscriber.Name != sess.Subscriber.Name {
+						logger.Debug("Send message to session: " + sess.Subscriber.Name)
+						sess.Msg <- []byte(msg.Payload)
+					}
 				}
 			}
 		}
@@ -177,15 +185,15 @@ func (m *Channel) Start() {
 				logger.Trace("Register session: " + session.Subscriber.Name + " in channel: " + m.Name)
 				// Send a welcome message to non-private channel
 				if !m.IsPrivate() {
-					message := Message{
-						RequestType: ACTION_SEND_MESSAGE,
-						Session:     session,
-						ChannelName: m.Name,
-						Message:     fmt.Sprintf(WELCOME_MESSAGE_FORMAT, session.Subscriber.Name, m.Name),
-					}
+					message := NewMessage(MSGTYPE_BCAST)
+					message.RequestType = ACTION_SEND_MESSAGE
+					message.Session = session
+					message.ChannelName = m.Name
+					message.Message = fmt.Sprintf(WELCOME_MESSAGE_FORMAT, session.Subscriber.Name, m.Name)
 					encoded, _ := message.Encode()
 
 					logger.Debug("Send message: " + string(*encoded))
+
 					err := m.rds.Publish(ctx, m.GetName(), *encoded).Err()
 					if err != nil {
 						logger.Error(err.Error())

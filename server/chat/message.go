@@ -17,6 +17,9 @@ const (
 
 	ACTION_SUBSCRIBER_JOINED = "subscriber-joined"
 	ACTION_SUBSCRIBER_LEFT   = "subscriber-left"
+
+	STATUS_SUCCESS = "success"
+	STATUS_FAILED  = "failed"
 )
 
 type MessageType int
@@ -32,12 +35,14 @@ const (
 // Id will determine which ack. for each req. message
 // MessageType will detect the source and direction of the message (client <-> server).
 type Message struct {
-	Id          uuid.UUID   `json:"id"`
-	MessageType MessageType `json:"messagetype"`
-	RequestType string      `json:"requesttype"`
-	Message     string      `json:"message"`
-	ChannelName string      `json:"channel"`
-	Session     *Session    `json:"session"`
+	Id             uuid.UUID   `json:"id"`
+	MessageType    MessageType `json:"messagetype"`
+	RequestType    string      `json:"requesttype"`
+	RequestSubType string      `json:"requestsubtype"`
+	Message        string      `json:"message"`
+	ChannelName    string      `json:"channel"`
+	Session        *Session    `json:"session"`
+	Status         string      `json:"status"`
 }
 
 func NewMessage(messageType MessageType) *Message {
