@@ -47,6 +47,10 @@ func listenAndServe(server *http.Server) {
 
 func main() {
 
+	defer func() {
+		logger.Stop()
+	}()
+
 	if config.GetValue("ENV") == "development" {
 		// Profiler. See: net/http/pprof
 		go func() {
@@ -91,7 +95,7 @@ func main() {
 	}
 
 	timer.Stop()
-	logger.Debug(fmt.Sprintf("Redis startup time(ms): %d", timer.ElapsedMs()))
+	logger.Debug(fmt.Sprintf("Redis startup time(ms): %.3f", timer.ElapsedMs()))
 
 	// Setup Data sources
 	//
@@ -110,7 +114,7 @@ func main() {
 	wsServer.Start()
 
 	timer.Stop()
-	logger.Debug(fmt.Sprintf("Websocket server startup time(ms): %d", timer.ElapsedMs()))
+	logger.Debug(fmt.Sprintf("Websocket server startup time(ms): %.3f", timer.ElapsedMs()))
 
 	// Start web server
 	//
@@ -129,7 +133,7 @@ func main() {
 	signal.Notify(sigCh, os.Interrupt) // Notify for interrupt signals (e.g., SIGINT)
 
 	parentTimer.Stop()
-	logger.Debug(fmt.Sprintf("Chat server startup time(ms): %d", parentTimer.ElapsedMs()))
+	logger.Debug(fmt.Sprintf("Chat server startup time(ms): %.3f", parentTimer.ElapsedMs()))
 
 	// Block until we get an interrupt signal
 	<-sigCh
@@ -157,5 +161,4 @@ func main() {
 	}
 
 	logger.Info("Server stopped! goodbye.")
-	logger.Close()
 }

@@ -217,12 +217,11 @@ func main() {
 	// Send subscriber 'santzky' join request
 	//
 	logger := log.GetLogger()
-
 	defer func() {
-		logger.Close()
+		logger.Stop()
 	}()
-	conn := getConnection(wsTarget)
 
+	conn := getConnection(wsTarget)
 	go processResponseMessage(conn)
 
 	EXPECTED_PASSED_TESTS = 0

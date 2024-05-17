@@ -212,7 +212,7 @@ func (m *Logger) initialize() {
 	go m.start()
 }
 
-func (m *Logger) Close() {
+func (m *Logger) Stop() {
 
 	// Kill logger routine
 	m.done <- struct{}{}
