@@ -10,6 +10,7 @@ import (
 	helpers "yt/chatbot/lib/utils"
 	"yt/chatbot/server/chat/config"
 
+	"github.com/petermattis/goid"
 	"github.com/sirupsen/logrus"
 )
 
@@ -233,7 +234,7 @@ func (m *Logger) Stop() {
 
 func (m *Logger) fmt(msg string) string {
 	fn, f, line := helpers.GetCallerInfo(3)
-	formatted := fmt.Sprintf("%s::%s(%d) %s", fn, f, line, msg)
+	formatted := fmt.Sprintf("[w=%d] %s::%s(%d) %s", goid.Get(), fn, f, line, msg)
 	return formatted
 }
 
