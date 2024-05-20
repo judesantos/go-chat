@@ -30,7 +30,8 @@ type Session struct {
 	wsSrvr         *Server
 	Msg            chan []byte `json:"-"`
 
-	done chan struct{}
+	stop       chan struct{}
+	registered bool
 }
 
 func NewSession(
@@ -51,7 +52,8 @@ func NewSession(
 		wsSrvr:     server,
 		Msg:        make(chan []byte, 256),
 		channels:   make(map[*Channel]bool),
-		done:       make(chan struct{}),
+		stop:       make(chan struct{}),
+		registered: false,
 	}
 
 	mw := workermanager.GetInstance()
@@ -87,7 +89,8 @@ func (m *Session) requestHandler() {
 			} else {
 				logger.Error("WebSocket read error: " + err.Error())
 			}
-			m.done <- struct{}{} // Tell responseHandler to git
+			m.disconnect()
+			//m.done <- struct{}{} // Tell responseHandler to git
 			break
 		} else {
 			// Process incoming message
@@ -109,27 +112,27 @@ func (m *Session) responseHandler() {
 		ticker.Stop()
 	}()
 
-	terminate := false
+	stop := false
 
-	for !terminate {
+	for !stop {
 		select {
-		case <-m.done:
-			terminate = true
+		case <-m.stop:
+			stop = true
 		case message, ok := <-m.Msg:
-			logger.Trace("Send message in socket: " + string(message))
+			logger.Trace("Send message: " + string(message))
 			m.wsConn.SetWriteDeadline(time.Now().Add(WRITE_DELAY))
 			if !ok {
 				// The WsServer closed the channel.
 				logger.Warn("Message channel closed. Bye!")
 				m.wsConn.WriteMessage(websocket.CloseMessage, []byte{})
-				terminate = true
+				stop = true
 			} else {
 				w, err := m.wsConn.NextWriter(websocket.TextMessage)
 				if err != nil {
 					logger.Error(err.Error())
-					terminate = true
+					stop = true
 				}
-				if !terminate {
+				if !stop {
 					w.Write(message)
 
 					// Attach queued chat messages to the current websocket message.
@@ -141,7 +144,7 @@ func (m *Session) responseHandler() {
 
 					if err := w.Close(); err != nil {
 						logger.Error(err.Error())
-						terminate = true
+						stop = true
 					}
 				}
 			}
@@ -149,16 +152,24 @@ func (m *Session) responseHandler() {
 			m.wsConn.SetWriteDeadline(time.Now().Add(WRITE_DELAY))
 			if err := m.wsConn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				logger.Error("Send ping error: " + err.Error())
-				terminate = true
+				stop = true
 			}
 		}
 	}
 	logger.Trace("Going away. Bye!")
 }
 
-func (m *Session) Disconnect() {
+func (m *Session) disconnect() {
 
 	logger.Trace("Session disconnect: " + m.Subscriber.Name)
+
+	for !m.registered {
+		logger.Trace("Wait on registered : " + m.Subscriber.Name)
+		// A premature websocket disconnection happened before sesssion is fully establised.
+		// Wait for server to finish the registration process.
+		timer := time.NewTimer(5 * time.Millisecond)
+		<-timer.C
+	}
 
 	for chn := range m.channels {
 		select {
@@ -167,6 +178,7 @@ func (m *Session) Disconnect() {
 			logger.Error("unregister from channel: " + chn.Name + " failed. Channel is gone")
 		}
 	}
+	m.channels = nil
 
 	// Send a friendly socket close message to other side
 	err := m.wsConn.WriteMessage(
@@ -174,15 +186,18 @@ func (m *Session) Disconnect() {
 		websocket.FormatCloseMessage(websocket.CloseNormalClosure,
 			"Server closed session."),
 	)
-
 	if err != nil {
 		logger.Error("WebSocket close error: " + err.Error())
 	}
 
+	// Tell server we quit
+	m.wsSrvr.unregisterSession <- m
+
 	// Close the session message channel
+	m.stop <- struct{}{}
+
+	close(m.stop)
 	close(m.Msg)
-	close(m.done)
-	m.channels = make(map[*Channel]bool)
 
 	logger.Trace("Session disconnect done.")
 }
@@ -341,19 +356,6 @@ func (m *Session) leaveChannel(channelName string) error {
 	channel.unregisterSession <- m
 	delete(m.channels, channel)
 
-	// Notify that we joined the room.
-	//resp := NewMessage(MSGTYPE_BCAST)
-	//resp.RequestType = ACTION_LEFT_CHANNEL
-	//resp.ChannelName = channelName
-	//resp.Session = m
-
-	//encoded, err := resp.Encode()
-	//if err != nil {
-	//	return err
-	//}
-
-	//// Send joined message to all subscribers on the channel
-	//m.Msg <- *encoded
 	return nil
 }
 
@@ -391,24 +393,6 @@ func (m *Session) joinChannel(channelName string, subscriber model.ISubscriber) 
 			break
 		}
 	}
-
-	//if !exists {
-	//	// Do not register same session
-	//	channel.registerSession <- m
-	//	// Notify that we joined the room.
-	//	message := NewMessage(MSGTYPE_BCAST)
-	//	message.RequestType = ACTION_JOINED_CHANNEL
-	//	message.ChannelName = channelName
-	//	message.Session = m
-
-	//	encoded, err := message.Encode()
-	//	if err != nil {
-	//		return err
-	//	}
-
-	//	// Send joined message to all subscribers on the channel
-	//	m.Msg <- *encoded
-	//}
 
 	if exists {
 		return false, nil

@@ -144,9 +144,9 @@ func (m *Server) acceptSessionRequest() {
 
 	logger.Trace("listen for session requests...")
 
-	terminate := false
+	stop := false
 
-	for !terminate {
+	for !stop {
 		select {
 		case session := <-m.registerSession:
 			logger.Trace("Session register request: " + session.Subscriber.Name)
@@ -156,7 +156,7 @@ func (m *Server) acceptSessionRequest() {
 			m.unregisterSessionRequest(session)
 		case <-m.ctx.Done():
 			logger.Trace("Got a cancellation event. Winding down...")
-			terminate = true
+			stop = true
 		}
 	}
 
@@ -212,26 +212,30 @@ func (m *Server) registerSessionRequest(session *Session) {
 	}
 
 	m.sessions[session] = true
+	session.registered = true
 
 	logger.Trace("End register session")
 }
 
 func (m *Server) unregisterSessionRequest(session *Session) {
+
 	if _, ok := m.sessions[session]; ok {
 
-		session.Disconnect()
+		logger.Trace("Unregister session: " + session.Subscriber.Name)
+
+		//session.disconnect()
 		delete(m.sessions, session)
 		// Publish user left in PubSub
-		message := Message{
-			RequestType: ACTION_SUBSCRIBER_LEFT,
-			Session:     session,
-		}
-		encoded, _ := message.Encode()
+		//message := Message{
+		//	RequestType: ACTION_SUBSCRIBER_LEFT,
+		//	Session:     session,
+		//}
+		//encoded, _ := message.Encode()
 
-		ctx := context.Background()
-		if err := m.rds.Publish(ctx, MAIN_CHANNEL, *encoded).Err(); err != nil {
-			logger.Error(err.Error())
-		}
+		//ctx := context.Background()
+		//if err := m.rds.Publish(ctx, MAIN_CHANNEL, *encoded).Err(); err != nil {
+		//	logger.Error(err.Error())
+		//}
 	}
 }
 
