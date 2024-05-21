@@ -16,16 +16,7 @@ The chat server is a WebSocket-based service designed with a channels-for-multip
 ## Benchmark tests:
 
 Tests ran on **apple M2Pro 16GB**
-
 Client and server are both hosted on the same machine.
-
-### Test case
-
-- Create session
-- Send a channel join request
-- Send a message to channel
-- Send a leave channel request
-- Teardown session
 
 ### Test Client:
 
@@ -33,9 +24,9 @@ Running 1500 test cases per worker, with 20 parallel workers simultaneously send
 
 ### Test case transactions:
 
-- Establish session
+- Establish a session
 - Send channel join request
-- Send channel message
+- Send channel a hello message
 - Send leave channel request
 - Disconnect from server
 
