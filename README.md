@@ -4,39 +4,12 @@ GoChat is a chat service developed using Go that allows users to communicate in 
 
 The chat server is a WebSocket-based service designed with a channels-for-multiple-connections architecture to ensure higher throughput and stability under high load conditions.
 
-
 ## DOT:
 
 - Subscriber - The chat user/client
 - Session - A subscriber’s active connection to the chat service.
 - Channel - A chat room that can be configured to operate as either a public or private space.
 - Server - Service that manages the creation, teardown of sessions and channels. Also manages subscription and sign-in requests
-
-
-## Benchmark tests:
-
-Tests ran on **apple M2Pro 16GB**. 
-Client and server are both hosted on the same machine.
-
-### Test Client:
-
-Running 1500 test cases per worker, with 20 workers simultaneously sending requests to server.
-
-### Test case transactions:
-
-- Establish a session
-- Send channel join request
-- Send channel a hello message
-- Send leave channel request
-- Disconnect from server
-
-### Avg. test duration: 
-
-29 seconds
-
-### Avg. latency per test case:
-
-**0.967** millisecond per test case = 29 seconds / 30,000 test cases
 
 ## Features
 
@@ -114,9 +87,34 @@ go build -o server_test test/server-test.go
 To run repeatedly in parallel using workers
 
 ```bash
-./test -r 1000 -w 10
+./server_test -r 1000 -w 10
 ```
-Will run 10,000 tests; 1000 synchronous tests (-r) for each go-routine worker, with 10 workers in parallel with other workers (-w). 
+The command with argument will run 10,000 tests; 1000 synchronous tests (-r) for each go-routine worker, with 10 asynchronous workers (-w). 
+
+## Benchmark tests:
+
+Tests ran on **apple M2Pro 16GB**. 
+Client and server are both hosted on the same machine.
+
+### Test Client:
+
+Running 1500 test cases per worker, with 20 workers simultaneously sending requests to server.
+
+### Test case transactions:
+
+- Establish a session
+- Send channel join request
+- Send channel a hello message
+- Send leave channel request
+- Disconnect from server
+
+### Avg. test duration: 
+
+29 seconds
+
+### Avg. latency per test case:
+
+**0.967** millisecond per test case = 29 seconds / 30,000 test cases
 
 ## Usage
 Once the chat service is running, users can connect using a WebSocket client or a chat client that supports WebSocket connections.
