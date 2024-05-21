@@ -69,7 +69,7 @@ cd go-chat
   go mod tidy
   ```
 
-### Build and Run
+## Build and Run
 
   ```bash
   go build -o chat-server server/main.go
