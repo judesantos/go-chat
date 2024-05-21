@@ -15,12 +15,12 @@ The chat server is a WebSocket-based service designed with a channels-for-multip
 
 ## Benchmark tests:
 
-Tests ran on **apple M2Pro 16GB**
+Tests ran on **apple M2Pro 16GB**. 
 Client and server are both hosted on the same machine.
 
 ### Test Client:
 
-Running 1500 test cases per worker, with 20 parallel workers simultaneously sending requests to server.
+Running 1500 test cases per worker, with 20 workers simultaneously sending requests to server.
 
 ### Test case transactions:
 
