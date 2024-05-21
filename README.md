@@ -30,7 +30,7 @@ Running 1500 test cases per worker, with 20 workers simultaneously sending reque
 - Send leave channel request
 - Disconnect from server
 
-### Avg. benchmark test duration: 
+### Avg. test duration: 
 
 29 seconds
 
