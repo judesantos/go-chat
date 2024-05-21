@@ -15,7 +15,7 @@ DOT:
 
 ## Benchmark tests:
 
-**Tests ran on apple M2Pro 16GB**
+Tests ran on **apple M2Pro 16GB**
 
 Client and server are both hosted on the same machine.
 
@@ -70,12 +70,12 @@ Running 1500 test cases per worker, with 20 parallel workers simultaneously send
 
 - Go installed on your machine. You can download and install Go from [here](https://golang.org/dl/).
 - sqlite
--
+
 ### Clone the Repository
 
 ```bash
-git clone https://github.com/jsantos/go-chat-service.git
-cd go-chat-service
+git clone https://github.com/judesantos/go-chat.git
+cd go-chat
 ```
 
 ### Setup Environment Variables
@@ -105,18 +105,35 @@ go mod tidy
 ```
 
 ### Build and Run
+
 ```bash
 go build -o chat-server server/main.go
 ./chat-server
 ```
 
+### Test - build server.test and run
+
+Make sure chat-server is running from the previous step.
+
+```bash
+go build -o server_test test/server-test.go
+./server_test
+```
+
+To run repeatedly in parallel using workers
+
+```bash
+./test -r 1000 -w 10
+```
+Will run 10,000 tests; 1000 synchronous tests (-r) for each go-routine worker, with 10 workers in parallel with other workers (-w). 
+
 ## Usage
 Once the chat service is running, users can connect using a WebSocket client or a chat client that supports WebSocket connections.
 
 ## API Endpoints
-- POST /signup: Register a new user
-- POST /login: Login and obtain a JWT token
-- GET /ws?name=[]username]: Connect to the chat service using WebSocket
+- POST /signup - Register a new user
+- POST /login - Login and obtain a JWT token
+- GET /ws?name=username - Connect to the chat service using WebSocket
 
 ## Database Setup
 - Create a sqlite server. Schema will automatically be created on setup.
