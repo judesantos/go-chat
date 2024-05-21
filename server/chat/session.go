@@ -30,8 +30,7 @@ type Session struct {
 	wsSrvr         *Server
 	Msg            chan []byte `json:"-"`
 
-	stop       chan struct{}
-	registered bool
+	stop chan struct{}
 }
 
 func NewSession(
@@ -53,7 +52,6 @@ func NewSession(
 		Msg:        make(chan []byte),
 		channels:   make(map[*Channel]bool),
 		stop:       make(chan struct{}),
-		registered: false,
 	}
 
 	mw := workermanager.GetInstance()
@@ -179,7 +177,7 @@ func (m *Session) disconnect() {
 			logger.Error("unregister from channel: " + chn.Name + " failed. Channel is gone")
 		}
 	}
-	m.channels = nil
+	m.channels = nil // Hasten GC
 
 	close(m.Msg)
 	m.Msg = nil

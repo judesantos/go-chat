@@ -144,21 +144,23 @@ func (m *Channel) Start() {
 					logger.Error("Unsubscribe pubsub failed: " + err.Error())
 				}
 				terminate = true
-			case msg := <-ch:
-				message := &Message{}
-				err := message.Decode(&msg.Payload)
-				if err != nil {
-					logger.Error(err.Error())
-					return
-				}
-				for sess := range m.sessions {
-					// Do not broadcast back to sender
-					if message.Session.Subscriber.Name != sess.Subscriber.Name {
-						logger.Debug("Send message to session: " + sess.Subscriber.Name)
-						sess.Msg <- []byte(msg.Payload)
+			case msg, ok := <-ch:
+				if ok {
+					message := &Message{}
+					err := message.Decode(&msg.Payload)
+					if err != nil {
+						logger.Error(err.Error())
+						return
 					}
+					for sess := range m.sessions {
+						// Do not broadcast back to sender
+						if message.Session.Subscriber.Name != sess.Subscriber.Name {
+							logger.Debug("Send message to session: " + sess.Subscriber.Name)
+							sess.Msg <- []byte(msg.Payload)
+						}
+					}
+					message = nil
 				}
-				message = nil
 			}
 		}
 

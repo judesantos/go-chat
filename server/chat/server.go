@@ -96,29 +96,30 @@ func (m *Server) acceptSubscriberRequest() {
 
 	for !terminate {
 		select {
-		case msg := <-ch:
+		case msg, ok := <-ch:
+			if ok {
+				var message Message
+				logger.Trace(msg.Payload)
 
-			var message Message
-			logger.Trace(msg.Payload)
+				err := message.Decode(&msg.Payload)
+				if err != nil {
+					logger.Error(err.Error())
+					terminate = true
+				}
 
-			err := message.Decode(&msg.Payload)
-			if err != nil {
-				logger.Error(err.Error())
-				terminate = true
-			}
+				if !terminate {
 
-			if !terminate {
+					logger.Trace("Subscriber request: " + message.Session.Subscriber.Name)
+					logger.Trace("Subscriber requestType: " + message.RequestType)
 
-				logger.Trace("Subscriber request: " + message.Session.Subscriber.Name)
-				logger.Trace("Subscriber requestType: " + message.RequestType)
-
-				switch message.RequestType {
-				case ACTION_JOINED_CHANNEL:
-					m.joinedChannelRequest(message)
-				case ACTION_LEAVE_CHANNEL:
-					m.leftChannelRequest(message)
-				case ACTION_PRIVATE_CHANNEL:
-					m.joinPrivateChannel(message)
+					switch message.RequestType {
+					case ACTION_JOINED_CHANNEL:
+						m.joinedChannelRequest(message)
+					case ACTION_LEAVE_CHANNEL:
+						m.leftChannelRequest(message)
+					case ACTION_PRIVATE_CHANNEL:
+						m.joinPrivateChannel(message)
+					}
 				}
 			}
 		case <-m.ctx.Done():
@@ -169,14 +170,12 @@ func (m *Server) registerSessionRequest(session *Session) {
 	if err != nil {
 		logger.Error(err.Error())
 		panic(err)
-		return
 	}
 	if subscr == nil {
 		err = m.subsciberDs.Add(session.Subscriber)
 		if err != nil {
 			logger.Error(err.Error())
 			panic(err)
-			return
 		}
 	} else {
 		session.Subscriber = subscr.(*datasource.Subscriber)
@@ -215,7 +214,6 @@ func (m *Server) registerSessionRequest(session *Session) {
 	uniqueSubs = nil
 
 	m.sessions[session] = true
-	session.registered = true
 
 	logger.Trace("End register session")
 }
