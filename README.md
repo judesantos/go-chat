@@ -5,7 +5,7 @@ GoChat is a chat service developed using Go that allows users to communicate in 
 The chat server is a WebSocket-based service designed with a channels-for-multiple-connections architecture to ensure higher throughput and stability under high load conditions.
 
 
-DOT:
+## DOT:
 
 - Subscriber - The chat user/client
 - Session - A subscriber’s active connection to the chat service.
