@@ -2,6 +2,51 @@
 
 GoChat is a chat service developed using Go that allows users to communicate in real-time over the internet.
 
+The chat server is a WebSocket-based service designed with a channels-for-multiple-connections architecture to ensure higher throughput and stability under high load conditions.
+
+
+DOT:
+
+- Subscriber - The chat user/client
+- Session - A subscriber’s active connection to the chat service.
+- Channel - A chat room that can be configured to operate as either a public or private space.
+- Server - Service that manages the creation, teardown of sessions and channels. Also manages subscription and sign-in requests
+
+
+## Benchmark tests:
+
+**Tests ran on apple M2Pro 16GB**
+
+Client and server are both hosted on the same machine.
+
+### Test case
+
+- Create session
+- Send a channel join request
+- Send a message to channel
+- Send a leave channel request
+- Teardown session
+
+### Test Client:
+
+Running 1500 test cases per worker, with 20 parallel workers simultaneously sending requests to server.
+
+### Test case transactions:
+
+- Establish session
+- Send channel join request
+- Send channel message
+- Send leave channel request
+- Disconnect from server
+
+### Avg. benchmark test duration: 
+
+29 seconds
+
+### Avg. latency per test case:
+
+**0.967** millisecond per test case = 29 seconds / 30,000 test cases
+
 ## Features
 
 - Real-time messaging
