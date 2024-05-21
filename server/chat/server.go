@@ -2,7 +2,6 @@ package chat
 
 import (
 	"context"
-	"fmt"
 	"yt/chatbot/lib/utils/log"
 	"yt/chatbot/lib/workermanager"
 	"yt/chatbot/server/chat/datasource"
@@ -56,25 +55,20 @@ func (m *Server) Stop() {
 
 	logger.Trace("Stopping server")
 
-	// Shutdown sessions and channels, if in session
-	for sess := range m.sessions {
-		m.unregisterSession <- sess
-	}
+	close(m.registerSession)
+	close(m.unregisterSession)
+
 	// channels may still be online with no sessions/subscribers
 	// Shut down as well
-	logger.Trace(fmt.Sprintf("Closing channels: %d", len(m.channels)))
 	for ch := range m.channels {
 		logger.Trace("Closing channel: " + ch.GetName())
-		ch.(*Channel).Stop()
+		if !ch.(*Channel).stopped {
+			ch.(*Channel).stop()
+		}
 	}
+	m.channels = nil
 
-	// It's safe to kill all workers now
 	m.ctxCancel()
-
-	//close(m.registerSession)
-	//close(m.unregisterSession)
-	//m.sessions = make(map[*Session]bool)
-
 	logger.Trace("Stop success!")
 }
 
@@ -148,12 +142,16 @@ func (m *Server) acceptSessionRequest() {
 
 	for !stop {
 		select {
-		case session := <-m.registerSession:
-			logger.Trace("Session register request: " + session.Subscriber.Name)
-			m.registerSessionRequest(session)
-		case session := <-m.unregisterSession:
-			logger.Trace("Session unregister request: " + session.Subscriber.Name)
-			m.unregisterSessionRequest(session)
+		case session, ok := <-m.registerSession:
+			if ok {
+				logger.Trace("Session register request: " + session.Subscriber.Name)
+				m.registerSessionRequest(session)
+			}
+		case session, ok := <-m.unregisterSession:
+			if ok {
+				logger.Trace("Session unregister request: " + session.Subscriber.Name)
+				m.unregisterSessionRequest(session)
+			}
 		case <-m.ctx.Done():
 			logger.Trace("Got a cancellation event. Winding down...")
 			stop = true
@@ -170,12 +168,14 @@ func (m *Server) registerSessionRequest(session *Session) {
 	subscr, err := m.subsciberDs.Get(session.Subscriber.Id)
 	if err != nil {
 		logger.Error(err.Error())
+		panic(err)
 		return
 	}
 	if subscr == nil {
 		err = m.subsciberDs.Add(session.Subscriber)
 		if err != nil {
 			logger.Error(err.Error())
+			panic(err)
 			return
 		}
 	} else {
@@ -183,33 +183,36 @@ func (m *Server) registerSessionRequest(session *Session) {
 	}
 
 	// Publish user in PubSub
-	message := Message{
+	message := &Message{
 		RequestType: ACTION_SUBSCRIBER_JOINED,
 		Session:     session,
 	}
 	ctx := context.Background()
 	encoded, _ := message.Encode()
+	message = nil
 
 	// Publish to all session in main channel?
 	if err := m.rds.Publish(ctx, MAIN_CHANNEL, *encoded).Err(); err != nil {
 		logger.Error(err.Error())
-		return
+		panic(err)
 	}
 
 	// List online sessions
 	var uniqueSubs = make(map[string]bool)
 	for _, sub := range m.subscribers {
 		if ok := uniqueSubs[sub.GetId()]; !ok {
-			message := Message{
+			message := &Message{
 				RequestType: ACTION_SUBSCRIBER_JOINED,
 				Session:     session,
 			}
 			uniqueSubs[sub.GetId()] = true
 
 			encoded, _ = message.Encode()
+			message = nil
 			session.Msg <- *encoded
 		}
 	}
+	uniqueSubs = nil
 
 	m.sessions[session] = true
 	session.registered = true
@@ -222,8 +225,6 @@ func (m *Server) unregisterSessionRequest(session *Session) {
 	if _, ok := m.sessions[session]; ok {
 
 		logger.Trace("Unregister session: " + session.Subscriber.Name)
-
-		//session.disconnect()
 		delete(m.sessions, session)
 		// Publish user left in PubSub
 		//message := Message{

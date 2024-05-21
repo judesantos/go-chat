@@ -38,6 +38,9 @@ func (m *ChannelSqlite) Add(channel model.IChannel) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		stmt.Close()
+	}()
 
 	_, err = stmt.Exec(channel.GetId(), channel.GetName(), channel.IsPrivate())
 

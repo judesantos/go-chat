@@ -50,7 +50,7 @@ func NewSession(
 		Subscriber: subscriber,
 		wsConn:     wsConn,
 		wsSrvr:     server,
-		Msg:        make(chan []byte, 256),
+		Msg:        make(chan []byte),
 		channels:   make(map[*Channel]bool),
 		stop:       make(chan struct{}),
 		registered: false,
@@ -90,7 +90,6 @@ func (m *Session) requestHandler() {
 				logger.Error("WebSocket read error: " + err.Error())
 			}
 			m.disconnect()
-			//m.done <- struct{}{} // Tell responseHandler to git
 			break
 		} else {
 			// Process incoming message
@@ -109,6 +108,7 @@ func (m *Session) responseHandler() {
 	ticker := time.NewTicker(PING_INTERVAL)
 	defer func() {
 		m.wsConn.Close()
+		m.wsConn = nil
 		ticker.Stop()
 	}()
 
@@ -119,14 +119,18 @@ func (m *Session) responseHandler() {
 		case <-m.stop:
 			stop = true
 		case message, ok := <-m.Msg:
-			logger.Trace("Send message: " + string(message))
-			m.wsConn.SetWriteDeadline(time.Now().Add(WRITE_DELAY))
 			if !ok {
 				// The WsServer closed the channel.
 				logger.Warn("Message channel closed. Bye!")
-				m.wsConn.WriteMessage(websocket.CloseMessage, []byte{})
+				m.wsConn.WriteMessage(
+					websocket.CloseMessage,
+					websocket.FormatCloseMessage(websocket.CloseNormalClosure,
+						"Server closed session."),
+				)
 				stop = true
 			} else {
+				logger.Trace("Send message: " + string(message))
+				m.wsConn.SetWriteDeadline(time.Now().Add(WRITE_DELAY))
 				w, err := m.wsConn.NextWriter(websocket.TextMessage)
 				if err != nil {
 					logger.Error(err.Error())
@@ -163,14 +167,11 @@ func (m *Session) disconnect() {
 
 	logger.Trace("Session disconnect: " + m.Subscriber.Name)
 
-	for !m.registered {
-		logger.Trace("Wait on registered : " + m.Subscriber.Name)
-		// A premature websocket disconnection happened before sesssion is fully establised.
-		// Wait for server to finish the registration process.
-		timer := time.NewTimer(5 * time.Millisecond)
-		<-timer.C
-	}
+	// Close the session message channel
+	m.stop <- struct{}{}
 
+	// Tell server we quit
+	m.wsSrvr.unregisterSession <- m
 	for chn := range m.channels {
 		select {
 		case chn.unregisterSession <- m:
@@ -180,24 +181,10 @@ func (m *Session) disconnect() {
 	}
 	m.channels = nil
 
-	// Send a friendly socket close message to other side
-	err := m.wsConn.WriteMessage(
-		websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseNormalClosure,
-			"Server closed session."),
-	)
-	if err != nil {
-		logger.Error("WebSocket close error: " + err.Error())
-	}
-
-	// Tell server we quit
-	m.wsSrvr.unregisterSession <- m
-
-	// Close the session message channel
-	m.stop <- struct{}{}
-
-	close(m.stop)
 	close(m.Msg)
+	m.Msg = nil
+	close(m.stop)
+	m.stop = nil
 
 	logger.Trace("Session disconnect done.")
 }

@@ -28,6 +28,7 @@ type Channel struct {
 	ctx               context.Context
 	ctxCancel         context.CancelFunc
 	stopping          bool
+	stopped           bool
 }
 
 // Get existing channel - if previously  created. Otherwise, create one.
@@ -52,6 +53,7 @@ func NewChannel(
 		ctx:               ctx,
 		ctxCancel:         cancel,
 		stopping:          false,
+		stopped:           false,
 	}
 
 	// Load from Data source
@@ -72,17 +74,17 @@ func NewChannel(
 		}
 	}
 
-	logger.Trace("Starting channel: " + name)
-
 	channel.Start()
-
-	logger.Trace("Started channel: " + name)
-
 	return channel, nil
 }
 
-func (m *Channel) Stop() {
+func (m *Channel) stop() {
+
 	m.stopping = true
+	close(m.registerSession)
+	close(m.unregisterSession)
+	close(m.broadcast)
+
 	logger.Trace(fmt.Sprintf("Channel stop. sessions: %d", len(m.sessions)))
 	if len(m.sessions) == 0 {
 		logger.Trace("Sending shutdown request")
@@ -91,10 +93,8 @@ func (m *Channel) Stop() {
 	}
 
 	logger.Trace(fmt.Sprintf("Num. sessions left on shutdown: %d", len(m.sessions)))
+	m.stopped = true
 
-	close(m.registerSession)
-	close(m.unregisterSession)
-	close(m.broadcast)
 }
 
 func (m *Channel) Start() {
@@ -145,7 +145,7 @@ func (m *Channel) Start() {
 				}
 				terminate = true
 			case msg := <-ch:
-				message := Message{}
+				message := &Message{}
 				err := message.Decode(&msg.Payload)
 				if err != nil {
 					logger.Error(err.Error())
@@ -158,6 +158,7 @@ func (m *Channel) Start() {
 						sess.Msg <- []byte(msg.Payload)
 					}
 				}
+				message = nil
 			}
 		}
 
@@ -181,56 +182,64 @@ func (m *Channel) Start() {
 				logger.Trace("Received a shutdown request. Winding down.")
 				terminate = true
 			// Join channel request
-			case session := <-m.registerSession:
-				logger.Trace("Register session: " + session.Subscriber.Name + " in channel: " + m.Name)
-				// Send a welcome message to non-private channel
-				if !m.IsPrivate() {
-					message := NewMessage(MSGTYPE_BCAST)
-					message.RequestType = ACTION_SEND_MESSAGE
-					message.Session = session
-					message.ChannelName = m.Name
-					message.Message = fmt.Sprintf(WELCOME_MESSAGE_FORMAT, session.Subscriber.Name, m.Name)
-					encoded, _ := message.Encode()
+			case session, ok := <-m.registerSession:
+				if ok {
+					logger.Trace("Register session: " + session.Subscriber.Name + " in channel: " + m.Name)
+					// Send a welcome message to non-private channel
+					if !m.IsPrivate() {
 
-					logger.Debug("Send message: " + string(*encoded))
+						message := NewMessage(MSGTYPE_BCAST)
+						message.RequestType = ACTION_SEND_MESSAGE
+						message.Session = session
+						message.ChannelName = m.Name
+						message.Message = fmt.Sprintf(WELCOME_MESSAGE_FORMAT, session.Subscriber.Name, m.Name)
+						encoded, _ := message.Encode()
+						message = nil
 
-					err := m.rds.Publish(ctx, m.GetName(), *encoded).Err()
-					if err != nil {
-						logger.Error(err.Error())
-						terminate = true
+						logger.Debug("Send message: " + string(*encoded))
+
+						err := m.rds.Publish(ctx, m.GetName(), *encoded).Err()
+						if err != nil {
+							logger.Error(err.Error())
+							terminate = true
+						}
+					}
+					if !terminate {
+						m.sessions[session] = true
 					}
 				}
-				if !terminate {
-					m.sessions[session] = true
-				}
 			// Leave channel
-			case session := <-m.unregisterSession:
-				// Session leaves channel
-				delete(m.sessions, session)
-				logger.Trace(
-					fmt.Sprintf(
-						"Unregister session. sessions: %d, stopping: %s",
-						len(m.sessions),
-						strconv.FormatBool(m.stopping),
-					),
-				)
-				// Check for shutdown request.
-				if m.stopping && len(m.sessions) == 0 {
-					// Main process is waiting for workers to cleanup and exit.
-					// Process all pending requests then stop workers.
-					m.ctxCancel()
+			case session, ok := <-m.unregisterSession:
+				if ok {
+					// Session leaves channel
+					delete(m.sessions, session)
+					logger.Trace(
+						fmt.Sprintf(
+							"Unregister session. sessions: %d, stopping: %s",
+							len(m.sessions),
+							strconv.FormatBool(m.stopping),
+						),
+					)
+					// Check for shutdown request.
+					if m.stopping && len(m.sessions) == 0 {
+						// Main process is waiting for workers to cleanup and exit.
+						// Process all pending requests then stop workers.
+						m.ctxCancel()
+					}
 				}
 			// Send request
-			case message := <-m.broadcast:
-				logger.Trace("broadcast message to sessions")
-				encoded, err := message.Encode()
-				if err != nil {
-					logger.Warn(err.Error())
-				} else {
-					err := m.rds.Publish(ctx, m.GetName(), *encoded).Err()
+			case message, ok := <-m.broadcast:
+				if ok {
+					logger.Trace("broadcast message to sessions")
+					encoded, err := message.Encode()
 					if err != nil {
-						logger.Error(err.Error())
-						terminate = true
+						logger.Warn(err.Error())
+					} else {
+						err := m.rds.Publish(ctx, m.GetName(), *encoded).Err()
+						if err != nil {
+							logger.Error(err.Error())
+							terminate = true
+						}
 					}
 				}
 			}

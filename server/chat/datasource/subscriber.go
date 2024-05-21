@@ -32,6 +32,9 @@ func (m *SubscriberSqlite) Add(subscriber model.ISubscriber) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		stmt.Close()
+	}()
 
 	_, err = stmt.Exec(subscriber.GetId(), subscriber.GetName())
 
@@ -46,6 +49,9 @@ func (m *SubscriberSqlite) Remove(subscriberId string) error {
 	if err != nil {
 		return err
 	}
+	defer func() {
+		stmt.Close()
+	}()
 
 	_, err = stmt.Exec(subscriberId)
 
