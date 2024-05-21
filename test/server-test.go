@@ -1,11 +1,14 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/url"
+	"os"
 	"time"
 	"yt/chatbot/lib/utils"
 	"yt/chatbot/lib/utils/log"
+	"yt/chatbot/lib/workermanager"
 	"yt/chatbot/server/chat"
 
 	"github.com/google/uuid"
@@ -20,61 +23,72 @@ const (
 	MSG_LEAVE_CHANNEL_FMT = `{"id":"%s", "messagetype": 0, "requesttype":"leave-channel", "channel":"%s", "message":"goodbye, %s!", "subscriber":{"name":"%s"}}`
 )
 
-var (
-	logger = log.GetLogger()
+var logger = log.GetLogger()
 
-	// Globals.
-	// TODO: Unglobalize
+type TestConfigData struct {
+	conn    *websocket.Conn
+	wsError chan error
+	msgCh   chan *chat.Message
 
-	EXPECTED_PASSED_TESTS = 0
-	passedTests           = 0
-	conn                  *websocket.Conn
-	msgCh                 chan *chat.Message
-	wsError               chan error
+	expectedPassedTests int
+	passedTests         int
+
+	serverHost string
+	channel    string
+	user       string
+}
+
+const (
+	STATUS_SUCCESS = iota
+	STATUS_CONNECTION_ERROR
+	STATUS_TEST_FAILED
 )
 
-const EXPECTED_TEST_RESPONSES = 6
+type TestStatus int
+
+func NewTestConfig(server string, channel string, user string) *TestConfigData {
+	return &TestConfigData{
+		expectedPassedTests: 0,
+		passedTests:         0,
+		serverHost:          server,
+		channel:             channel,
+		user:                user,
+	}
+}
 
 func getConnection(serverURL string, user string) *websocket.Conn {
-
-	var err error
 
 	subscriber := user //"santzky"
 	wsURL := fmt.Sprintf("%s?name=%s", serverURL, url.QueryEscape(subscriber))
 
 	// Upgrade the HTTP connection to a WebSocket connection
-	conn, _, err = websocket.DefaultDialer.Dial(wsURL, nil)
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {
-		panic("Websocket connect failed! Please check" + wsTarget + " exists, or is online.")
+		logger.Error("Websocket connect failed! Please check " + wsTarget + " exists, or is online.")
+		return nil
 	}
 
 	return conn
 }
 
-func processResponseMessage(conn *websocket.Conn) {
-
-	//logger.Info("Start processResponse")
+func processResponseMessage(config *TestConfigData) {
 
 	for {
 		var message chat.Message
-		err := conn.ReadJSON(&message)
+		err := config.conn.ReadJSON(&message)
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
-				logger.Error("WebSocket closd error: " + err.Error())
+				logger.Error("WebSocket closed error: " + err.Error())
 				// Socket closed from parent, or server
-				wsError <- err
+				config.wsError <- err
+			} else {
+				logger.Error("Websocket error: " + err.Error())
 			}
 			break
 		}
 
-		//msgBytes, _ := message.Encode()
-		//msg := string(*msgBytes)
-		//logger.Info("Received message from server: " + msg)
-
-		msgCh <- &message
+		config.msgCh <- &message
 	}
-
-	//logger.Info("End processResponse")
 }
 
 func validateResponse(send *string, outMsg *chat.Message) bool {
@@ -94,15 +108,15 @@ func validateResponse(send *string, outMsg *chat.Message) bool {
 	return false
 }
 
-func sendMessageWaitForResponse(msg string) (*chat.Message, error) {
+func sendMessageWaitForResponse(config *TestConfigData, msg string) (*chat.Message, error) {
 
-	err := conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	err := config.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
 	if err != nil {
 		logger.Trace("Set read timeout failed: " + err.Error())
 		return nil, err
 	}
 
-	err = conn.WriteMessage(websocket.TextMessage, []byte(msg))
+	err = config.conn.WriteMessage(websocket.TextMessage, []byte(msg))
 	if err != nil {
 		logger.Trace("Write failed: " + err.Error())
 		return nil, err
@@ -110,12 +124,10 @@ func sendMessageWaitForResponse(msg string) (*chat.Message, error) {
 
 	// Wait for response.
 	// Block until response received.
-	//logger.Info("Wait response from server: " + msg)
 	select {
-	case resp := <-msgCh:
-		//logger.Info("Received message from server: " + msg)
+	case resp := <-config.msgCh:
 		return resp, nil
-	case <-wsError:
+	case <-config.wsError:
 		return nil, err
 	}
 }
@@ -139,14 +151,14 @@ func getLeaveChannelMessage(channel string, user string) string {
 // Join the channel
 // Send message to channel
 // Leave channel
-func joinChannelForSubscriber(channel string, user string) bool {
+func joinChannelForSubscriber(config *TestConfigData, channel string, user string) bool {
 
 	// Send join-channel 'channel2' request
 	//
 
 	msg := getJoinChannelMessage(channel, user)
 	logger.Info("Send message: " + msg)
-	resp, err := sendMessageWaitForResponse(msg)
+	resp, err := sendMessageWaitForResponse(config, msg)
 	if err != nil {
 		logger.Error("Failed to send 'join-channel' message: " + err.Error())
 		return false
@@ -162,7 +174,7 @@ func joinChannelForSubscriber(channel string, user string) bool {
 
 	msg = getSendChannelMessage(channel, user)
 	logger.Info("Send message: " + msg)
-	resp, err = sendMessageWaitForResponse(msg)
+	resp, err = sendMessageWaitForResponse(config, msg)
 	if err != nil {
 		logger.Error("Failed to send 'send-msg' message: " + err.Error())
 		return false
@@ -183,7 +195,7 @@ func joinChannelForSubscriber(channel string, user string) bool {
 
 	msg = getLeaveChannelMessage(channel, user)
 	logger.Info("Send message: " + msg)
-	resp, err = sendMessageWaitForResponse(msg)
+	resp, err = sendMessageWaitForResponse(config, msg)
 	if err != nil {
 		logger.Error("Failed to send 'leave-channel' message: " + err.Error())
 		return false
@@ -197,77 +209,135 @@ func joinChannelForSubscriber(channel string, user string) bool {
 	return true
 }
 
-func runTest(channel string, user string) (int, int) {
+func runTest(cfg *TestConfigData) TestStatus {
 
 	timer := utils.PerfTimer{}
 	timer.Start()
 
-	msgCh = make(chan *chat.Message)
-	wsError = make(chan error)
+	cfg.conn = getConnection(cfg.serverHost, cfg.user)
+	if cfg.conn == nil {
+		return STATUS_CONNECTION_ERROR
+	}
 
-	conn := getConnection(wsTarget, user)
+	cfg.msgCh = make(chan *chat.Message)
+	cfg.wsError = make(chan error)
+
 	defer func() {
+		logger.Warn("Closing socket connection")
+		cfg.conn.Close()
 
-		logger.Warn("Closing socket connection.")
-		conn.Close()
-		conn = nil
-
-		close(msgCh)
-		close(wsError)
+		close(cfg.msgCh)
+		close(cfg.wsError)
 	}()
 
-	go processResponseMessage(conn)
+	go processResponseMessage(cfg)
 
-	if !joinChannelForSubscriber(channel+"1", user) {
-		return EXPECTED_PASSED_TESTS, passedTests
+	if !joinChannelForSubscriber(cfg, cfg.channel+"1", cfg.user) {
+		return STATUS_TEST_FAILED
 	}
-	if !joinChannelForSubscriber(channel+"2", user) {
-		return EXPECTED_PASSED_TESTS, passedTests
+	if !joinChannelForSubscriber(cfg, cfg.channel+"2", cfg.user) {
+		return STATUS_TEST_FAILED
 	}
 
 	timer.Stop()
 	logger.Debug(fmt.Sprintf("Test elapsed(ms): %.03f", timer.ElapsedMs()))
 
-	passedTests++
-	return EXPECTED_PASSED_TESTS, passedTests
+	cfg.passedTests++
+	return STATUS_SUCCESS
 }
 
-func runRegressionTest(channel string, user string, repeat int) (int, int) {
+func runRegressionTest(cfg *TestConfigData) bool {
 
-	EXPECTED_PASSED_TESTS = repeat
-	passedTests = 0
+	origName := cfg.user
+	for loop := 0; loop < cfg.expectedPassedTests; loop++ {
 
-	for loop := 0; loop < repeat; loop++ {
-
-		runTest(channel, fmt.Sprintf("%s%d", user, loop))
+		cfg.user = fmt.Sprintf("%s%d", origName, loop)
+		if runTest(cfg) == STATUS_CONNECTION_ERROR {
+			return false
+		}
 
 	}
 
-	return EXPECTED_PASSED_TESTS, passedTests
+	return true
 }
 
-func createTearDownSessions(user string, repeat int) (int, int) {
+func createTearDownSessions(cfg *TestConfigData) bool {
 
-	EXPECTED_PASSED_TESTS = repeat
+	origName := cfg.user
 
-	for loop := 0; loop < repeat; loop++ {
+	for loop := 0; loop < cfg.expectedPassedTests; loop++ {
 
-		_user := fmt.Sprintf("%s%d", user, loop)
-		conn := getConnection(wsTarget, _user)
-		defer func() {
-			logger.Warn("Closing socket connection.")
-			conn.Close()
-			conn = nil
-		}()
+		cfg.user = fmt.Sprintf("%s%d", origName, loop)
+		cfg.conn = getConnection(cfg.serverHost, cfg.user)
+		if cfg.conn == nil {
+			return false
+		}
+		cfg.msgCh = make(chan *chat.Message)
+		cfg.wsError = make(chan error)
 
-		go processResponseMessage(conn)
-		passedTests++
+		go processResponseMessage(cfg)
+		cfg.passedTests++
+
+		cfg.conn.Close()
+		close(cfg.msgCh)
+		close(cfg.wsError)
+
 	}
 
-	return EXPECTED_PASSED_TESTS, passedTests + 1
+	return true
+}
+
+func runRegressionWorkers(cfg *TestConfigData, numWorkers int) bool {
+
+	expectedPassed := cfg.expectedPassedTests
+	cfg.expectedPassedTests = cfg.expectedPassedTests * numWorkers
+
+	rw := workermanager.GetInstance()
+
+	for loop := 0; loop < numWorkers; loop++ {
+
+		_ch := fmt.Sprintf("%s%d", cfg.channel, loop)
+		_usr := fmt.Sprintf("%s%d", cfg.user, loop)
+
+		_cfg := NewTestConfig(cfg.serverHost, _ch, _usr)
+		_cfg.expectedPassedTests = expectedPassed
+
+		rw.StartWorker(
+			func() {
+				if runRegressionTest(_cfg) {
+					cfg.passedTests += _cfg.passedTests
+				}
+			},
+			fmt.Sprintf("runReqressionTest%d", loop),
+		)
+
+	}
+
+	rw.WaitAll()
+	return true
+}
+
+func usage() {
+	fmt.Println("Usage: test -c [test_case_to_run: 1,2,3,4] -r [repeat_test_case_count. e.g.: 2]")
+	fmt.Println("Options:")
+	flag.PrintDefaults()
 }
 
 func main() {
+
+	var run, repeatCount, workerCount int
+
+	flag.IntVar(&run, "c", 1, "Test case option: [1, 2]; Default=1")
+	flag.IntVar(&repeatCount, "r", 1, "Repeat test case. Default=1")
+	flag.IntVar(&workerCount, "w", 1, "Num. workers (Only available for test #4.). Default=1")
+
+	flag.Parse()
+
+	if run > 4 {
+		fmt.Println("Invalid test-case option: ", run)
+		usage()
+		os.Exit(-1)
+	}
 
 	// Send subscriber 'santzky' join request
 	//
@@ -276,46 +346,31 @@ func main() {
 		logger.Stop()
 	}()
 
-	channel := "channel"
-	user := "santzky"
-
-	EXPECTED_PASSED_TESTS = 0
-	passedTests = -1
-
-	run := 2
-	repeatCount := 3000
-
-	expected := 0
-	passed := 0
-
 	timer := utils.PerfTimer{}
 	timer.Start()
 
-	if run == 0 {
+	channel := "channel"
+	user := "santzky"
 
-		conn := getConnection(wsTarget, user)
-		defer func() {
-			logger.Warn("Closing socket connection.")
-			conn.Close()
-			conn = nil
-		}()
+	cfg := NewTestConfig(wsTarget, channel, user)
+	cfg.expectedPassedTests = repeatCount
 
-		go processResponseMessage(conn)
-		expected, passed = runTest(channel, user)
+	if run == 2 {
+
+		// Create websocket session, teardown session
+		// Create new user, connection in each case
+		createTearDownSessions(cfg)
 
 	} else if run == 1 {
 
-		expected, passed = runRegressionTest(channel, user, repeatCount)
-
-	} else if run == 2 {
-
-		expected, passed = createTearDownSessions(user, repeatCount)
+		// Repeat runRegressionTest * workerCount of parallel workers.
+		runRegressionWorkers(cfg, workerCount)
 	}
 
-	if expected == passed {
-		logger.Info(fmt.Sprintf("All %d tests passed!", expected))
+	if cfg.expectedPassedTests == cfg.passedTests {
+		logger.Info(fmt.Sprintf("All %d tests passed!", cfg.expectedPassedTests))
 	} else {
-		logger.Warn(fmt.Sprintf("%d tests passed out of %d", passed, expected))
+		logger.Warn(fmt.Sprintf("%d tests passed out of %d", cfg.passedTests, cfg.expectedPassedTests))
 	}
 
 	timer.Stop()
