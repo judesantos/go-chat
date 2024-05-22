@@ -63,10 +63,10 @@ cd go-chat
   LOG_FILE_LEVEL=info       [ Min. log level for file logs ]
   ```
 
-### Install Dependencies
+### Setup development environment
 
   ```bash
-  go mod tidy
+  sh init.sh
   ```
 
 ## Build and Run
@@ -76,7 +76,7 @@ cd go-chat
   ./chat-server
   ```
 
-### Test - build server.test and run
+### Test - build server_test and run
 
   Make sure chat-server is running from the previous step.
 
@@ -85,7 +85,7 @@ cd go-chat
   ./server_test
   ```
 
-  To run repeatedly in parallel using workers
+  To run tests repeatedly in parallel using workers
 
   ```bash
   ./server_test -r 1000 -w 10
@@ -126,7 +126,7 @@ cd go-chat
 - GET /ws?name=username - Connect to the chat service using WebSocket
 
 ## Database Setup
-- Create a sqlite server. Schema will automatically be created on setup.
+- Create a pgsql server. Schema will automatically be created on setup.
 - Update the database connection details in the .env file.
 
 ## Contributing

@@ -22,7 +22,7 @@ docker-compose up -d
 
 ## Install Go. Install project go libraries
 echo
-echo "Setting up go..."
+echo "Setting up Go..."
 sh ./development/setup-go.sh
 
 ## Setup pgsql db
