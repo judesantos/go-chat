@@ -3,8 +3,8 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"yt/chat/lib/db"
-	"yt/chat/lib/utils/log"
 )
 
 func createDbTables(conn *sql.DB) error {
@@ -33,29 +33,28 @@ func createDbTables(conn *sql.DB) error {
 	return nil
 }
 
-var logger = log.GetLogger()
-
 func main() {
 
 	// Setup database
 	conn, err := db.GetConnection()
+	defer func() {
+		conn.Close()
+	}()
 
 	if err != nil {
 
-		logger.Error("Get DB connection failed: " + err.Error())
-		return
+		fmt.Println("Get DB connection failed: ", err.Error())
+		os.Exit(-1)
 
 	} else if err := createDbTables(conn); err != nil {
 
-		logger.Error("Create tables failed: " + err.Error())
+		fmt.Println("Create tables failed: " + err.Error())
+		os.Exit(-2)
 
 	} else {
 
-		log.GetLogger().Info("Create tables success!")
+		os.Exit(0)
 
 	}
-
-	conn.Close()
-	logger.Stop()
 
 }
