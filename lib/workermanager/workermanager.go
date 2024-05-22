@@ -2,7 +2,7 @@ package workermanager
 
 import (
 	"sync"
-	"yt/chatbot/lib/utils/log"
+	"yt/chat/lib/utils/log"
 )
 
 type WorkerManager struct {

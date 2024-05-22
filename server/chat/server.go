@@ -2,10 +2,10 @@ package chat
 
 import (
 	"context"
-	"yt/chatbot/lib/utils/log"
-	"yt/chatbot/lib/workermanager"
-	"yt/chatbot/server/chat/datasource"
-	"yt/chatbot/server/chat/model"
+	"yt/chat/lib/utils/log"
+	"yt/chat/lib/workermanager"
+	"yt/chat/server/chat/datasource"
+	"yt/chat/server/chat/model"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -166,7 +166,7 @@ func (m *Server) registerSessionRequest(session *Session) {
 
 	logger.Trace("Register session: " + session.Subscriber.Name)
 
-	subscr, err := m.subsciberDs.Get(session.Subscriber.Id)
+	subscr, err := m.subsciberDs.Get(session.Subscriber.Name)
 	if err != nil {
 		logger.Error(err.Error())
 		panic(err)

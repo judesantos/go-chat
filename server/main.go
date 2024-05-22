@@ -6,14 +6,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"yt/chatbot/lib/utils"
-	"yt/chatbot/lib/utils/log"
-	"yt/chatbot/lib/workermanager"
-	"yt/chatbot/server/chat"
-	"yt/chatbot/server/chat/config"
-	"yt/chatbot/server/chat/datasource"
-	"yt/chatbot/server/chat/db"
-	"yt/chatbot/server/web"
+	"yt/chat/lib/config"
+	"yt/chat/lib/db"
+	"yt/chat/lib/utils"
+	"yt/chat/lib/utils/log"
+	"yt/chat/lib/workermanager"
+	"yt/chat/server/chat"
+	"yt/chat/server/chat/datasource"
+	"yt/chat/server/web"
 
 	_ "net/http/pprof"
 
@@ -67,7 +67,8 @@ func main() {
 	logger.Info("Start persistence services...")
 
 	// Persistence storage
-	conn, err := db.GetConnection(config.GetValue("SERVER_DB"))
+	conn, err := db.GetConnection()
+	//conn, err := db.GetConnection(config.GetValue("SERVER_DB"))
 	if err != nil {
 		panic(err)
 	}

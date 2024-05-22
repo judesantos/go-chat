@@ -2,8 +2,8 @@ package web
 
 import (
 	"net/http"
-	"yt/chatbot/server/chat"
-	"yt/chatbot/server/chat/model"
+	"yt/chat/server/chat"
+	"yt/chat/server/chat/model"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"

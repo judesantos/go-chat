@@ -2,9 +2,9 @@ package web
 
 import (
 	"net/http"
-	"yt/chatbot/lib/utils/log"
-	"yt/chatbot/server/chat"
-	"yt/chatbot/server/chat/model"
+	"yt/chat/lib/utils/log"
+	"yt/chat/server/chat"
+	"yt/chat/server/chat/model"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/websocket"

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	helpers "yt/chatbot/lib/utils"
-	"yt/chatbot/server/chat/config"
+	"yt/chat/lib/config"
+	helpers "yt/chat/lib/utils"
 
 	"github.com/petermattis/goid"
 	"github.com/sirupsen/logrus"

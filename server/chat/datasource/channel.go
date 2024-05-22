@@ -2,7 +2,7 @@ package datasource
 
 import (
 	"database/sql"
-	"yt/chatbot/server/chat/model"
+	"yt/chat/server/chat/model"
 )
 
 type Channel struct {
@@ -31,7 +31,7 @@ type ChannelSqlite struct {
 
 func (m *ChannelSqlite) Add(channel model.IChannel) error {
 
-	sql := "INSERT INTO channel(id, name, private) VALUES(?, ?, ?)"
+	sql := "INSERT INTO channel(id, name, private) VALUES($1, $2, $3)"
 	var err error
 
 	stmt, err := m.DbConn.Prepare(sql)
@@ -42,14 +42,19 @@ func (m *ChannelSqlite) Add(channel model.IChannel) error {
 		stmt.Close()
 	}()
 
-	_, err = stmt.Exec(channel.GetId(), channel.GetName(), channel.IsPrivate())
+	private := 0
+	if channel.IsPrivate() {
+		private = 1
+	}
+
+	_, err = stmt.Exec(channel.GetId(), channel.GetName(), private)
 
 	return err
 }
 
 func (m *ChannelSqlite) Get(chName string) (model.IChannel, error) {
 
-	sqlStmt := "SELECT id, name, private FROM channel WHERE name = ? LIMIT 1"
+	sqlStmt := "SELECT id, name, private FROM channel WHERE name = $1 LIMIT 1"
 
 	channel := &Channel{}
 	row := m.DbConn.QueryRow(sqlStmt, chName)

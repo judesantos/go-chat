@@ -2,7 +2,7 @@ package datasource
 
 import (
 	"database/sql"
-	"yt/chatbot/server/chat/model"
+	"yt/chat/server/chat/model"
 )
 
 type Subscriber struct {
@@ -26,7 +26,7 @@ type SubscriberSqlite struct {
 
 func (m *SubscriberSqlite) Add(subscriber model.ISubscriber) error {
 
-	sqlStmt := "INSERT INTO subscriber(id, name) VALUES(?,?)"
+	sqlStmt := "INSERT INTO subscriber(id, name) VALUES($1, $2)"
 
 	stmt, err := m.DbConn.Prepare(sqlStmt)
 	if err != nil {
@@ -41,9 +41,9 @@ func (m *SubscriberSqlite) Add(subscriber model.ISubscriber) error {
 	return err
 }
 
-func (m *SubscriberSqlite) Remove(subscriberId string) error {
+func (m *SubscriberSqlite) Remove(name string) error {
 
-	sqlStmt := "DELETE FROM subscriber WHERE id = ?"
+	sqlStmt := "DELETE FROM subscriber WHERE name = $1"
 
 	stmt, err := m.DbConn.Prepare(sqlStmt)
 	if err != nil {
@@ -53,16 +53,16 @@ func (m *SubscriberSqlite) Remove(subscriberId string) error {
 		stmt.Close()
 	}()
 
-	_, err = stmt.Exec(subscriberId)
+	_, err = stmt.Exec(name)
 
 	return err
 }
 
-func (m *SubscriberSqlite) Get(subscriberId string) (model.ISubscriber, error) {
+func (m *SubscriberSqlite) Get(name string) (model.ISubscriber, error) {
 
-	sqlStmt := "SELECT id, name FROM subscriber where id = ? LIMIT 1"
+	sqlStmt := "SELECT id, name FROM subscriber where name = $1 LIMIT 1"
 
-	row := m.DbConn.QueryRow(sqlStmt, subscriberId)
+	row := m.DbConn.QueryRow(sqlStmt, name)
 
 	var subs Subscriber
 

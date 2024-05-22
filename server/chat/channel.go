@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"yt/chatbot/lib/workermanager"
-	"yt/chatbot/server/chat/model"
+	"yt/chat/lib/workermanager"
+	"yt/chat/server/chat/model"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
@@ -253,6 +253,7 @@ func (m *Channel) Start() {
 
 	<-done // Block until pubsub service is ready to shutdown
 	close(done)
+	done = nil
 
 }
 

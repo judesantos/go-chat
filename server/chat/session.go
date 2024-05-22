@@ -2,9 +2,9 @@ package chat
 
 import (
 	"time"
-	"yt/chatbot/lib/workermanager"
-	"yt/chatbot/server/chat/datasource"
-	"yt/chatbot/server/chat/model"
+	"yt/chat/lib/workermanager"
+	"yt/chat/server/chat/datasource"
+	"yt/chat/server/chat/model"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
