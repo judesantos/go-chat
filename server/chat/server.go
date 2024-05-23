@@ -166,7 +166,7 @@ func (m *Server) registerSessionRequest(session *Session) {
 
 	logger.Trace("Register session: " + session.Subscriber.Name)
 
-	subscr, err := m.subsciberDs.Get(session.Subscriber.Name)
+	subscr, err := m.subsciberDs.Get(session.Subscriber)
 	if err != nil {
 		logger.Error(err.Error())
 		panic(err)

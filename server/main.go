@@ -101,8 +101,8 @@ func main() {
 	// Setup Data sources
 	//
 
-	channelDs := datasource.ChannelSqlite{DbConn: conn}
-	subscriberDs := datasource.SubscriberSqlite{DbConn: conn}
+	channelDs := datasource.ChannelPgsql{DbConn: conn}
+	subscriberDs := datasource.SubscriberPgsql{DbConn: conn}
 
 	// Start chat server
 	//

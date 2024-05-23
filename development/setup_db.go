@@ -30,6 +30,16 @@ func createDbTables(conn *sql.DB) error {
 		return fmt.Errorf("%q: %s", err.Error(), sqlStmt)
 	}
 
+	sqlStmt = `CREATE TABLE IF NOT EXISTS transient (
+			id VARCHAR(255) NOT NULL PRIMARY KEY,
+			name VARCHAR(255) UNIQUE NOT NULL
+		);`
+
+	_, err = conn.Exec(sqlStmt)
+	if err != nil {
+		return fmt.Errorf("%q: %s", err.Error(), sqlStmt)
+	}
+
 	return nil
 }
 

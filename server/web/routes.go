@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"yt/chat/lib/auth"
 	"yt/chat/server/chat"
 	"yt/chat/server/chat/model"
 
@@ -24,9 +25,11 @@ func getServiceHandler(
 	),
 ) func(http.ResponseWriter, *http.Request) {
 
-	return func(resp http.ResponseWriter, req *http.Request) {
-		h(resp, req, wsSrvr, rds, channelDs, subscriberDs)
-	}
+	return auth.Authenticate(
+		func(resp http.ResponseWriter, req *http.Request) {
+			h(resp, req, wsSrvr, rds, channelDs, subscriberDs)
+		},
+	)
 }
 
 func GetRoutes(
@@ -38,27 +41,29 @@ func GetRoutes(
 
 	r := mux.NewRouter()
 
-	wsConnectReqHdlr := getServiceHandler(
+	// Subscriber socket connection request
+	//
+
+	f := r.HandleFunc("/ws", getServiceHandler(
 		wsSrvr,
 		rds,
 		channelDs,
 		subscriberDs,
-		OnSocketConnect,
-	)
+		onSocketConnect,
+	))
+	f.Methods("GET")
 
-	r.HandleFunc("/ws", wsConnectReqHdlr).Methods("GET")
+	// Subscriber login requests
+	//
 
-	//channelsHdlr := getServiceHandler(rds, OnSubscriber)
-	//r.HandleFunc("/channels", channelsHdlr).Methods("GET")
-
-	//channelHdlr := getServiceHandler(rds, OnSubscriber)
-	//r.HandleFunc("/channels", channelHdlr).Methods("GET")
-
-	//subscriberHdlr := getServiceHandler(rds, OnSubscriber)
-	//r.HandleFunc("/subscriber/{id}", subscriberHdlr).Methods("GET")
-
-	//allSubscribersHdlr := getServiceHandler(rds, OnAllSubscribers)
-	//r.HandleFunc("/subscribers", allSubscribersHdlr).Methods("GET")
+	f = r.HandleFunc("/login", getServiceHandler(
+		wsSrvr,
+		rds,
+		channelDs,
+		subscriberDs,
+		onLogin,
+	))
+	f.Methods("POST")
 
 	return r
 }

@@ -6,7 +6,6 @@ import (
 	"yt/chat/server/chat/datasource"
 	"yt/chat/server/chat/model"
 
-	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -36,14 +35,9 @@ type Session struct {
 func NewSession(
 	server *Server,
 	wsConn *websocket.Conn,
-	subscriberName string,
+	subscriber *datasource.Subscriber,
 ) error {
-	logger.Info("Session::NewSession() creating session for: " + subscriberName)
-
-	subscriber := &datasource.Subscriber{
-		Id:   uuid.New().String(),
-		Name: subscriberName,
-	}
+	logger.Info("Session::NewSession() creating session for: " + subscriber.Name)
 
 	session := &Session{
 		Subscriber: subscriber,

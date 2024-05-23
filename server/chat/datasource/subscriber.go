@@ -5,10 +5,19 @@ import (
 	"yt/chat/server/chat/model"
 )
 
+type SubscriberType string
+
+const (
+	SUBSCRIBER_TYPE_ANONYMOUS = "anonymous"
+	SUBSCRIBER_TYPE_LOGIN     = "login"
+)
+
 type Subscriber struct {
 	model.ISubscriber `json:"-"`
 	Id                string `json:"id"`
 	Name              string `json:"name"`
+	Password          string `json:"password"`
+	Type              string `json:"-"`
 }
 
 func (m *Subscriber) GetId() string {
@@ -19,14 +28,23 @@ func (m *Subscriber) GetName() string {
 	return m.Name
 }
 
-type SubscriberSqlite struct {
+func (m *Subscriber) GetPassword() string {
+	return m.Password
+}
+
+type SubscriberPgsql struct {
 	model.ISubscriberDS
 	DbConn *sql.DB
 }
 
-func (m *SubscriberSqlite) Add(subscriber model.ISubscriber) error {
+func (m *SubscriberPgsql) Add(subscriber model.ISubscriber) error {
 
-	sqlStmt := "INSERT INTO subscriber(id, name) VALUES($1, $2)"
+	var sqlStmt string
+	if subscriber.(*Subscriber).Type == SUBSCRIBER_TYPE_ANONYMOUS {
+		sqlStmt = "INSERT INTO transient(id, name) VALUES($1, $2)"
+	} else {
+		sqlStmt = "INSERT INTO subscriber(id, name) VALUES($1, $2)"
+	}
 
 	stmt, err := m.DbConn.Prepare(sqlStmt)
 	if err != nil {
@@ -41,9 +59,14 @@ func (m *SubscriberSqlite) Add(subscriber model.ISubscriber) error {
 	return err
 }
 
-func (m *SubscriberSqlite) Remove(name string) error {
+func (m *SubscriberPgsql) Remove(subscriber model.ISubscriber) error {
 
-	sqlStmt := "DELETE FROM subscriber WHERE name = $1"
+	var sqlStmt string
+	if subscriber.(*Subscriber).Type == SUBSCRIBER_TYPE_ANONYMOUS {
+		sqlStmt = "DELETE FROM transientr WHERE name = $1"
+	} else {
+		sqlStmt = "DELETE FROM subscriber WHERE name = $1"
+	}
 
 	stmt, err := m.DbConn.Prepare(sqlStmt)
 	if err != nil {
@@ -53,16 +76,21 @@ func (m *SubscriberSqlite) Remove(name string) error {
 		stmt.Close()
 	}()
 
-	_, err = stmt.Exec(name)
+	_, err = stmt.Exec(subscriber.GetName())
 
 	return err
 }
 
-func (m *SubscriberSqlite) Get(name string) (model.ISubscriber, error) {
+func (m *SubscriberPgsql) Get(subscriber model.ISubscriber) (model.ISubscriber, error) {
 
-	sqlStmt := "SELECT id, name FROM subscriber where name = $1 LIMIT 1"
+	var sqlStmt string
+	if subscriber.(*Subscriber).Type == SUBSCRIBER_TYPE_ANONYMOUS {
+		sqlStmt = "SELECT id, name FROM transient where name = $1 LIMIT 1"
+	} else {
+		sqlStmt = "SELECT id, name FROM subscriber where name = $1 LIMIT 1"
+	}
 
-	row := m.DbConn.QueryRow(sqlStmt, name)
+	row := m.DbConn.QueryRow(sqlStmt, subscriber.GetName())
 
 	var subs Subscriber
 
@@ -77,7 +105,7 @@ func (m *SubscriberSqlite) Get(name string) (model.ISubscriber, error) {
 	return &subs, nil
 }
 
-func (m *SubscriberSqlite) GetAll() ([]model.ISubscriber, error) {
+func (m *SubscriberPgsql) GetAll() ([]model.ISubscriber, error) {
 
 	sqlStmt := "SELECT id, name FROM subscriber"
 

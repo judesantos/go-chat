@@ -24,12 +24,12 @@ func (m *Channel) IsPrivate() bool {
 	return m.Private
 }
 
-type ChannelSqlite struct {
+type ChannelPgsql struct {
 	model.IChannelDS
 	DbConn *sql.DB
 }
 
-func (m *ChannelSqlite) Add(channel model.IChannel) error {
+func (m *ChannelPgsql) Add(channel model.IChannel) error {
 
 	sql := "INSERT INTO channel(id, name, private) VALUES($1, $2, $3)"
 	var err error
@@ -52,7 +52,7 @@ func (m *ChannelSqlite) Add(channel model.IChannel) error {
 	return err
 }
 
-func (m *ChannelSqlite) Get(chName string) (model.IChannel, error) {
+func (m *ChannelPgsql) Get(chName string) (model.IChannel, error) {
 
 	sqlStmt := "SELECT id, name, private FROM channel WHERE name = $1 LIMIT 1"
 
