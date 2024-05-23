@@ -18,9 +18,9 @@ import (
 const (
 	wsTarget = "ws://localhost:8080/ws"
 
-	MSG_JOIN_CHANNEL_FMT  = `{"id":"%s", "messagetype": 0, "requesttype":"join-channel", "channel":"%s", "message":"hello %s", "subscriber":{"name":"%s"}}`
-	MSG_SEND_CHANNEL_FMT  = `{"id":"%s", "messagetype": 0, "requesttype":"send-msg", "channel":"%s", "message":"hello %s, how are you doing?", "subscriber":{"name":"%s"}}`
-	MSG_LEAVE_CHANNEL_FMT = `{"id":"%s", "messagetype": 0, "requesttype":"leave-channel", "channel":"%s", "message":"goodbye, %s!", "subscriber":{"name":"%s"}}`
+	MSG_JOIN_CHANNEL_FMT  = `{"id":"%s", "messagetype": 0, "requesttype":"join-channel", "channel":"%s", "message":"hello %s", "subscriber":{"name":"%s", "email":"jude@yourtechy.com"}}`
+	MSG_SEND_CHANNEL_FMT  = `{"id":"%s", "messagetype": 0, "requesttype":"send-msg", "channel":"%s", "message":"hello %s, how are you doing?", "subscriber":{"name":"%s", "email":"jude@yourtechy.com"}}`
+	MSG_LEAVE_CHANNEL_FMT = `{"id":"%s", "messagetype": 0, "requesttype":"leave-channel", "channel":"%s", "message":"goodbye, %s!", "subscriber":{"name":"%s", "email":"jude@yourtechy.com"}}`
 )
 
 var logger = log.GetLogger()
@@ -35,7 +35,9 @@ type TestConfigData struct {
 
 	serverHost string
 	channel    string
-	user       string
+
+	user  string
+	email string
 }
 
 const (
@@ -46,20 +48,22 @@ const (
 
 type TestStatus int
 
-func NewTestConfig(server string, channel string, user string) *TestConfigData {
+func NewTestConfig(server string, channel string, user string, email string) *TestConfigData {
 	return &TestConfigData{
 		expectedPassedTests: 0,
 		passedTests:         0,
 		serverHost:          server,
 		channel:             channel,
 		user:                user,
+		email:               email,
 	}
 }
 
-func getConnection(serverURL string, user string) *websocket.Conn {
+func getConnection(serverURL string, user string, email string) *websocket.Conn {
 
 	subscriber := user //"santzky"
-	wsURL := fmt.Sprintf("%s?name=%s", serverURL, url.QueryEscape(subscriber))
+	wsURL := fmt.Sprintf("%s?name=%s&email=%s", serverURL,
+		url.QueryEscape(subscriber), url.QueryEscape(email))
 
 	// Upgrade the HTTP connection to a WebSocket connection
 	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
@@ -214,7 +218,7 @@ func runTest(cfg *TestConfigData) TestStatus {
 	timer := utils.PerfTimer{}
 	timer.Start()
 
-	cfg.conn = getConnection(cfg.serverHost, cfg.user)
+	cfg.conn = getConnection(cfg.serverHost, cfg.user, cfg.email)
 	if cfg.conn == nil {
 		return STATUS_CONNECTION_ERROR
 	}
@@ -268,7 +272,7 @@ func createTearDownSessions(cfg *TestConfigData) bool {
 	for loop := 0; loop < cfg.expectedPassedTests; loop++ {
 
 		cfg.user = fmt.Sprintf("%s%d", origName, loop)
-		cfg.conn = getConnection(cfg.serverHost, cfg.user)
+		cfg.conn = getConnection(cfg.serverHost, cfg.user, cfg.email)
 		if cfg.conn == nil {
 			return false
 		}
@@ -298,8 +302,9 @@ func runRegressionWorkers(cfg *TestConfigData, numWorkers int) bool {
 
 		_ch := fmt.Sprintf("%s%d", cfg.channel, loop)
 		_usr := fmt.Sprintf("%s%d", cfg.user, loop)
+		_email := fmt.Sprintf("%s%d", cfg.email, loop)
 
-		_cfg := NewTestConfig(cfg.serverHost, _ch, _usr)
+		_cfg := NewTestConfig(cfg.serverHost, _ch, _usr, _email)
 		_cfg.expectedPassedTests = expectedPassed
 
 		rw.StartWorker(
@@ -351,8 +356,9 @@ func main() {
 
 	channel := "channel"
 	user := "santzky"
+	email := "jude@yourtechy.com"
 
-	cfg := NewTestConfig(wsTarget, channel, user)
+	cfg := NewTestConfig(wsTarget, channel, user, email)
 	cfg.expectedPassedTests = repeatCount
 
 	if run == 2 {

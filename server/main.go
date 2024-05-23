@@ -120,10 +120,10 @@ func main() {
 	// Start web server
 	//
 
-	routes := web.GetRoutes(wsServer, rds, &channelDs, &subscriberDs)
+	handler := web.GetRoutes(wsServer, rds, &channelDs, &subscriberDs)
 	httpServer := &http.Server{
 		Addr:    ":" + config.GetValue("SERVER_PORT"),
-		Handler: routes,
+		Handler: *handler,
 	}
 
 	// Start server now

@@ -31,7 +31,7 @@ type ChannelPgsql struct {
 
 func (m *ChannelPgsql) Add(channel model.IChannel) error {
 
-	sql := "INSERT INTO channel(id, name, private) VALUES($1, $2, $3)"
+	sql := "INSERT INTO channel(name, private) VALUES($1, $2)"
 	var err error
 
 	stmt, err := m.DbConn.Prepare(sql)
@@ -47,7 +47,7 @@ func (m *ChannelPgsql) Add(channel model.IChannel) error {
 		private = 1
 	}
 
-	_, err = stmt.Exec(channel.GetId(), channel.GetName(), private)
+	_, err = stmt.Exec(channel.GetName(), private)
 
 	return err
 }

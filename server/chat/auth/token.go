@@ -3,13 +3,19 @@ package auth
 import (
 	"fmt"
 	"time"
-	"yt/chat/server/chat/model"
+	"yt/chat/server/chat/datasource"
 
 	"github.com/dgrijalva/jwt-go"
 )
 
 const HMAC_SECRET = ")sd*fIske2^se(f_@E&qw=_-"
 const EXPIRE_TIME_SECS = 3600 // seconds. 1 hour
+
+type TokenMeta struct {
+	AccessToken string // The signed access-token
+	TTL         int    // Time in seconds from creation
+	ExpiresAt   int64  // Timestamp in seconds of expiration
+}
 
 type TokenClaim struct {
 	jwt.StandardClaims
@@ -26,18 +32,31 @@ func (m *TokenClaim) GetName() string {
 }
 
 // Create fresh token for a specified subscriber
-func NewToken(user model.ISubscriber) (string, error) {
+func NewToken(user *datasource.Subscriber) (*TokenMeta, error) {
 
+	expiresAt := time.Now().Unix() + EXPIRE_TIME_SECS
 	token := jwt.NewWithClaims(
 		jwt.SigningMethodHS256,
 		jwt.MapClaims{
 			"Id":        user.GetId(),
 			"Name":      user.GetName(),
-			"ExpiresAt": time.Now().Unix() + EXPIRE_TIME_SECS,
+			"ExpiresAt": expiresAt,
 		},
 	)
 
-	return token.SignedString([]byte(HMAC_SECRET))
+	signed, err := token.SignedString([]byte(HMAC_SECRET))
+	if err != nil {
+		return nil, err
+	}
+
+	tokenMeta := &TokenMeta{
+		AccessToken: signed,
+		TTL:         EXPIRE_TIME_SECS,
+		ExpiresAt:   expiresAt,
+	}
+
+	return tokenMeta, nil
+
 }
 
 func validateKey(token *jwt.Token) (interface{}, error) {
@@ -50,10 +69,10 @@ func validateKey(token *jwt.Token) (interface{}, error) {
 	return []byte(HMAC_SECRET), nil
 }
 
-func ValidateToken(signed string) (model.ISubscriber, error) {
+func ValidateToken(signed string) (*TokenClaim, error) {
 
 	parsed, err := jwt.ParseWithClaims(signed, &TokenClaim{}, validateKey)
-	subs, ok := parsed.Claims.(model.ISubscriber)
+	subs, ok := parsed.Claims.(*TokenClaim)
 	if ok && parsed.Valid {
 		return subs, nil
 	}

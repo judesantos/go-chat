@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"yt/chat/lib/utils/log"
 	"yt/chat/server/chat/datasource"
-
-	"github.com/google/uuid"
 )
 
 type ContextKey string
@@ -23,16 +21,16 @@ func Authenticate(fn http.HandlerFunc) http.HandlerFunc {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		//w.Header().Set("Access-Control-Allow-Origin", "*")
+		//w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		//w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
-		// Check if the request method is OPTIONS (preflight request)
-		if r.Method == "OPTIONS" {
-			// Respond with a 200 status code
-			w.WriteHeader(http.StatusOK)
-			return
-		}
+		//// Check if the request method is OPTIONS (preflight request)
+		//if r.Method == "OPTIONS" {
+		//	// Respond with a 200 status code
+		//	w.WriteHeader(http.StatusOK)
+		//	return
+		//}
 
 		ep := r.URL.Path
 		if ep == "/login" {
@@ -41,11 +39,11 @@ func Authenticate(fn http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		var token, name string
+		var token, name, email string
 
 		if r.Method == http.MethodPost {
 
-			// User provided token acquired by prior login
+			// User provided token acquired from prior login
 
 			bodyBytes, err := io.ReadAll(r.Body)
 			if err != nil {
@@ -66,17 +64,19 @@ func Authenticate(fn http.HandlerFunc) http.HandlerFunc {
 		} else if r.Method == http.MethodGet {
 
 			// Non-registered subscriber messaging
-
-			var s_token []string
-			var s_name []string
+			log.GetLogger().Debug("Process request: " + r.URL.RawQuery)
 
 			s_token, tok := r.URL.Query()["token"]
 			s_name, nok := r.URL.Query()["name"]
+			s_email, eok := r.URL.Query()["email"]
 
 			if tok && len(s_token) == 1 {
 				token = s_token[0]
 			} else if nok && len(s_name) == 1 {
 				name = s_name[0]
+			}
+			if eok && len(s_email) == 1 {
+				email = s_email[0]
 			}
 
 		} else {
@@ -89,35 +89,41 @@ func Authenticate(fn http.HandlerFunc) http.HandlerFunc {
 
 		if len(token) > 0 {
 
-			user, err := ValidateToken(token)
-			// Audit. No exceptions
-			msg = fmt.Sprintf("Authenticated request: (%s)[ip=%s;user-agent=%s,user=%s]",
-				ep, srcIp, userAgent, user.GetName())
-			log.GetLogger().Info(msg)
-
+			userClaim, err := ValidateToken(token)
 			if err != nil {
+				msg = fmt.Sprintf("Authenticated request: (%s)[ip=%s;user-agent=%s]",
+					ep, srcIp, userAgent)
+				log.GetLogger().Warn("Forbidden request. Denied. " + msg)
 
-				log.GetLogger().Warn("Forbidden request. Denied.")
 				http.Error(w, "Forbidden", http.StatusForbidden)
-
-			} else {
-
-				ctx := context.WithValue(r.Context(), CONTEXT_KEY, user)
-				// Call the endpoint handler
-				fn(w, r.WithContext(ctx))
 			}
 
-		} else if len(name) > 0 {
+			// Audit. No exceptions
+			msg = fmt.Sprintf("Authenticated request: (%s)[ip=%s;user-agent=%s,user=%s]",
+				ep, srcIp, userAgent, userClaim.GetName())
+			log.GetLogger().Info(msg)
+
+			// Set as registered subscriber
+			user := &datasource.Subscriber{
+				Id:   userClaim.Id,
+				Name: userClaim.Name,
+				Type: datasource.SUBSCRIBER_TYPE_LOGIN,
+			}
+			ctx := context.WithValue(r.Context(), CONTEXT_KEY, user)
+			// Call the endpoint handler
+			fn(w, r.WithContext(ctx))
+
+		} else if len(name) > 0 && len(email) > 0 {
 
 			// Continue with request using anonymous user
 			anon := datasource.Subscriber{
-				Id:   uuid.New().String(),
-				Name: name,
-				Type: datasource.SUBSCRIBER_TYPE_ANONYMOUS,
+				Name:  name,
+				Email: email,
+				Type:  datasource.SUBSCRIBER_TYPE_ANONYMOUS,
 			}
 			// Audit. No exceptions
-			msg = fmt.Sprintf("Anonymous request: (%s)[ip=%s;user-agent=%s,user=%s]",
-				ep, srcIp, userAgent, anon.Id)
+			msg = fmt.Sprintf("Anonymous request: (%s)[ip=%s;user-agent=%s,user=%s,email=%s]",
+				ep, srcIp, userAgent, name, email)
 			log.GetLogger().Info(msg)
 
 			ctx := context.WithValue(r.Context(), CONTEXT_KEY, &anon)

@@ -2,10 +2,11 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
-	"yt/chat/lib/auth"
 	"yt/chat/lib/utils/log"
 	"yt/chat/server/chat"
+	"yt/chat/server/chat/auth"
 	"yt/chat/server/chat/datasource"
 	"yt/chat/server/chat/model"
 
@@ -18,6 +19,10 @@ var logger = log.GetLogger()
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
+	CheckOrigin: func(r *http.Request) bool {
+		// Allow all origins during development
+		return true
+	},
 }
 
 // Handle websocket connection request
@@ -33,8 +38,8 @@ func onSocketConnect(
 
 	ctxValue := req.Context().Value(auth.CONTEXT_KEY)
 	if ctxValue == nil {
-		log.GetLogger().Error("Not authenticated")
-		http.Error(resp, "Not authenticated", http.StatusUnauthorized)
+		log.GetLogger().Error("Not authorized")
+		sendErrorResponse(resp, "Not authorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -44,7 +49,7 @@ func onSocketConnect(
 	conn, err := upgrader.Upgrade(resp, req, nil)
 	if err != nil {
 		logger.Error("Connection request failed: " + err.Error())
-		http.Error(resp, "Something went wrong", http.StatusInternalServerError)
+		sendErrorResponse(resp, err.Error(), http.StatusForbidden)
 		return
 	}
 
@@ -70,48 +75,63 @@ func onLogin(
 	err := json.NewDecoder(req.Body).Decode(&subscr)
 	if err != nil {
 		log.GetLogger().Error("Decode failed: " + err.Error())
-		http.Error(resp, err.Error(), http.StatusBadRequest)
+		sendErrorResponse(resp, err.Error(), http.StatusBadRequest)
 		return
 	}
-
-	log.GetLogger().Debug("Find subscriber")
-
 	// Find the user in the database by username
+	subscr.Type = datasource.SUBSCRIBER_TYPE_LOGIN
 	subs, err := subscriberDs.Get(&subscr)
+
 	if err != nil {
-		http.Error(resp, "Something went wrong", http.StatusInternalServerError)
+		log.GetLogger().Error(err.Error())
+		sendErrorResponse(resp, "Something went wrong", http.StatusInternalServerError)
 		return
 	}
 	if subs == nil {
 		// User not found or not registered
-		http.Error(resp, "Invalid user/password", http.StatusUnauthorized)
+		log.GetLogger().Debug("Subscriber not found: " + subscr.Name)
+		sendErrorResponse(resp, "Invalid user/password", http.StatusUnauthorized)
 		return
 	}
 
-	log.GetLogger().Debug("validate subscriber")
+	recSubs := subs.(*datasource.Subscriber)
 
 	// Check if the passwords match
-	ok, err := auth.Validate(
-		subscr.Password,
-		subs.(*datasource.Subscriber).Password,
-	)
-
-	if !ok || err != nil {
-		errorResponse(resp)
+	if !auth.Validate(
+		subscr.Password,  // clear text
+		recSubs.Password, // stored hash
+	) {
+		log.GetLogger().Debug("Invalid password: " + subscr.Name)
+		sendErrorResponse(resp, "Invalid user/password", http.StatusUnauthorized)
 		return
 	}
 
 	log.GetLogger().Debug("create token")
 
 	// Create a JWT
-	token, err := auth.NewToken(subs)
+	token, err := auth.NewToken(recSubs)
 
 	if err != nil {
-		errorResponse(resp)
+		sendErrorResponse(resp, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	resp.Write([]byte(token))
+	// Remove properties from response message
+
+	jsonResp := chat.AppResponse{
+		Token:  token,
+		Name:   recSubs.Name,
+		Email:  recSubs.Email,
+		Status: chat.STATUS_SUCCESS,
+	}
+
+	respString, err := json.Marshal(jsonResp)
+	if err != nil {
+		sendErrorResponse(resp, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	resp.Write(respString)
 
 }
 
@@ -123,10 +143,10 @@ func onAllSubscribers(resp http.ResponseWriter, req *http.Request, rds *redis.Cl
 
 }
 
-func errorResponse(w http.ResponseWriter) {
+func sendErrorResponse(resp http.ResponseWriter, msg string, errCode int) {
 
-	log.GetLogger().Debug("ErrorResponse")
+	resp.Header().Set("Content-Type", "application/json")
+	_msg := fmt.Sprintf(`{"status":"failed", "message": "%s"}`, msg)
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Write([]byte(`{"status": "error"}`))
+	http.Error(resp, _msg, errCode)
 }

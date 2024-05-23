@@ -2,12 +2,14 @@ package web
 
 import (
 	"net/http"
-	"yt/chat/lib/auth"
+	"yt/chat/lib/config"
 	"yt/chat/server/chat"
+	"yt/chat/server/chat/auth"
 	"yt/chat/server/chat/model"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
+	"github.com/rs/cors"
 )
 
 func getServiceHandler(
@@ -37,9 +39,27 @@ func GetRoutes(
 	rds *redis.Client,
 	channelDs model.IChannelDS,
 	subscriberDs model.ISubscriberDS,
-) *mux.Router {
+) *http.Handler {
 
+	var handler http.Handler
 	r := mux.NewRouter()
+
+	// Setup CORS permissions - allowed settings are found in dotenv config
+	if config.GetValue("ENV") == "development" {
+		// No restriction in dev.
+		c := cors.New(cors.Options{
+			AllowedOrigins:   []string{"*"},
+			AllowCredentials: true,
+		})
+		handler = c.Handler(r)
+	} else {
+		// Allow sites listed in dotenv config
+		c := cors.New(cors.Options{
+			AllowedOrigins:   []string{config.GetValue("ALLOWED_ORIGINS")},
+			AllowCredentials: true,
+		})
+		handler = c.Handler(r)
+	}
 
 	// Subscriber socket connection request
 	//
@@ -65,5 +85,5 @@ func GetRoutes(
 	))
 	f.Methods("POST")
 
-	return r
+	return &handler
 }

@@ -4,7 +4,7 @@ type ISubscriber interface {
 	GetId() string
 	GetName() string
 	GetPassword() string
-	GetType() string
+	GetEmail() string
 }
 
 type ISubscriberDS interface {

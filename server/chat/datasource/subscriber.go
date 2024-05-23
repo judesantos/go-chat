@@ -17,6 +17,7 @@ type Subscriber struct {
 	Id                string `json:"id"`
 	Name              string `json:"name"`
 	Password          string `json:"password"`
+	Email             string `json:"email"`
 	Type              string `json:"-"`
 }
 
@@ -32,6 +33,10 @@ func (m *Subscriber) GetPassword() string {
 	return m.Password
 }
 
+func (m *Subscriber) GetEmail() string {
+	return m.Email
+}
+
 type SubscriberPgsql struct {
 	model.ISubscriberDS
 	DbConn *sql.DB
@@ -41,9 +46,9 @@ func (m *SubscriberPgsql) Add(subscriber model.ISubscriber) error {
 
 	var sqlStmt string
 	if subscriber.(*Subscriber).Type == SUBSCRIBER_TYPE_ANONYMOUS {
-		sqlStmt = "INSERT INTO transient(id, name) VALUES($1, $2)"
+		sqlStmt = "INSERT INTO transient(name, email) VALUES($1, $2)"
 	} else {
-		sqlStmt = "INSERT INTO subscriber(id, name) VALUES($1, $2)"
+		sqlStmt = "INSERT INTO subscriber(name, password, email) VALUES($1, $2, $3)"
 	}
 
 	stmt, err := m.DbConn.Prepare(sqlStmt)
@@ -54,7 +59,11 @@ func (m *SubscriberPgsql) Add(subscriber model.ISubscriber) error {
 		stmt.Close()
 	}()
 
-	_, err = stmt.Exec(subscriber.GetId(), subscriber.GetName())
+	if subscriber.(*Subscriber).Type == SUBSCRIBER_TYPE_ANONYMOUS {
+		_, err = stmt.Exec(subscriber.GetName())
+	} else {
+		_, err = stmt.Exec(subscriber.GetName(), subscriber.GetPassword(), subscriber.GetEmail())
+	}
 
 	return err
 }
@@ -87,14 +96,14 @@ func (m *SubscriberPgsql) Get(subscriber model.ISubscriber) (model.ISubscriber, 
 	if subscriber.(*Subscriber).Type == SUBSCRIBER_TYPE_ANONYMOUS {
 		sqlStmt = "SELECT id, name FROM transient where name = $1 LIMIT 1"
 	} else {
-		sqlStmt = "SELECT id, name FROM subscriber where name = $1 LIMIT 1"
+		sqlStmt = "SELECT id, name, password, email FROM subscriber where name = $1 LIMIT 1"
 	}
 
 	row := m.DbConn.QueryRow(sqlStmt, subscriber.GetName())
 
 	var subs Subscriber
 
-	err := row.Scan(&subs.Id, &subs.Name)
+	err := row.Scan(&subs.Id, &subs.Name, &subs.Password, &subs.Email)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -103,25 +112,4 @@ func (m *SubscriberPgsql) Get(subscriber model.ISubscriber) (model.ISubscriber, 
 	}
 
 	return &subs, nil
-}
-
-func (m *SubscriberPgsql) GetAll() ([]model.ISubscriber, error) {
-
-	sqlStmt := "SELECT id, name FROM subscriber"
-
-	rows, err := m.DbConn.Query(sqlStmt)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var subs []model.ISubscriber
-
-	for rows.Next() {
-		sub := &Subscriber{}
-		rows.Scan(&sub.Id, &sub.Name)
-		subs = append(subs, sub)
-	}
-
-	return subs, nil
 }

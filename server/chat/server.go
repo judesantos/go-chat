@@ -162,20 +162,20 @@ func (m *Server) acceptSessionRequest() {
 	logger.Trace("going away. Bye!")
 }
 
-func (m *Server) registerSessionRequest(session *Session) {
+func (m *Server) registerSessionRequest(session *Session) error {
 
 	logger.Trace("Register session: " + session.Subscriber.Name)
 
 	subscr, err := m.subsciberDs.Get(session.Subscriber)
 	if err != nil {
 		logger.Error(err.Error())
-		panic(err)
+		return err
 	}
 	if subscr == nil {
 		err = m.subsciberDs.Add(session.Subscriber)
 		if err != nil {
 			logger.Error(err.Error())
-			panic(err)
+			return err
 		}
 	} else {
 		session.Subscriber = subscr.(*datasource.Subscriber)
@@ -193,7 +193,7 @@ func (m *Server) registerSessionRequest(session *Session) {
 	// Publish to all session in main channel?
 	if err := m.rds.Publish(ctx, MAIN_CHANNEL, *encoded).Err(); err != nil {
 		logger.Error(err.Error())
-		panic(err)
+		return err
 	}
 
 	// List online sessions
@@ -216,9 +216,10 @@ func (m *Server) registerSessionRequest(session *Session) {
 	m.sessions[session] = true
 
 	logger.Trace("End register session")
+	return nil
 }
 
-func (m *Server) unregisterSessionRequest(session *Session) {
+func (m *Server) unregisterSessionRequest(session *Session) error {
 
 	if _, ok := m.sessions[session]; ok {
 
@@ -236,6 +237,8 @@ func (m *Server) unregisterSessionRequest(session *Session) {
 		//	logger.Error(err.Error())
 		//}
 	}
+
+	return nil
 }
 
 func (m *Server) joinedChannelRequest(message Message) {

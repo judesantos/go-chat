@@ -2,9 +2,14 @@ package chat
 
 import (
 	"encoding/json"
+	"yt/chat/server/chat/auth"
 
 	"github.com/google/uuid"
 )
+
+//
+// Websocket request, response messaging
+//
 
 const (
 	ACTION_SEND_MESSAGE          = "send-msg"
@@ -63,4 +68,16 @@ func (m *Message) Encode() (*[]byte, error) {
 
 func (m *Message) Decode(data *string) error {
 	return json.Unmarshal([]byte(*data), m)
+}
+
+//
+// Http request, response messaging
+//
+
+type AppResponse struct {
+	Token   *auth.TokenMeta `json:"token"`
+	Name    string          `json:"name"`
+	Email   string          `json:"email"`
+	Status  string          `json:"status"`
+	Message string          `json:"message"`
 }

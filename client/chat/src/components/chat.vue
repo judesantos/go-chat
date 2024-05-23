@@ -3,7 +3,7 @@
     <div class="row justify-content-center h-100">
       <div class="col-12 form" v-if="!wsock">
         <div class="input-group">
-          <input v-model="subscriber.subscribername" class="form-control subscribername" placeholder="subscribername"/>
+          <input v-model="subscriber.name" class="form-control subscribername" placeholder="subscribername"/>
           <input v-model="subscriber.password" type="password" class="form-control password" placeholder="password"/>
 
           <div class="input-group-append">
@@ -105,6 +105,7 @@ let chatData = {
       id: "",
       name: "",
       password: "",
+      email: "jude.msantos@gmail.com",
       token: ""
     },
     channels: [],
@@ -121,6 +122,7 @@ let chatOperations = {
   async login() {
 
     try {
+
       const result = await axios.post(SERVER_HOST + "/login", this.subscriber);
 
       if (
