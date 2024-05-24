@@ -146,20 +146,12 @@ func (m *Channel) Start() {
 				terminate = true
 			case msg, ok := <-ch:
 				if ok {
-					message := &Message{}
-					err := message.Decode(&msg.Payload)
-					if err != nil {
-						logger.Error(err.Error())
-						return
-					}
+					logger.Debug("Got a pubsub message: " + msg.Payload)
 					for sess := range m.sessions {
 						// Do not broadcast back to sender
-						if message.Session.Subscriber.Name != sess.Subscriber.Name {
-							logger.Debug("Send message to session: " + sess.Subscriber.Name)
-							sess.Msg <- []byte(msg.Payload)
-						}
+						logger.Debug("Send message to session: " + sess.Subscriber.Name)
+						sess.Msg <- []byte(msg.Payload)
 					}
-					message = nil
 				}
 			}
 		}
@@ -232,11 +224,12 @@ func (m *Channel) Start() {
 			// Send request
 			case message, ok := <-m.broadcast:
 				if ok {
-					logger.Trace("broadcast message to sessions")
+					logger.Debug("New channel message: " + message.RequestType)
 					encoded, err := message.Encode()
 					if err != nil {
 						logger.Warn(err.Error())
 					} else {
+						logger.Trace(m.GetName() + ": Broadcast message to sessions")
 						err := m.rds.Publish(ctx, m.GetName(), *encoded).Err()
 						if err != nil {
 							logger.Error(err.Error())

@@ -12,13 +12,12 @@ import (
 //
 
 const (
-	ACTION_SEND_MESSAGE          = "send-msg"
-	ACTION_JOIN_CHANNEL          = "join-channel"
-	ACTION_LEAVE_CHANNEL         = "leave-channel"
-	ACTION_LEFT_CHANNEL          = "left-channel"
-	ACTION_JOINED_CHANNEL        = "joined-channel"
-	ACTION_NOTSUBSCRIBED_CHANNEL = "not-joined-channel"
-	ACTION_PRIVATE_CHANNEL       = "join-private-channel"
+	ACTION_SEND_MESSAGE    = "send-msg"
+	ACTION_JOIN_CHANNEL    = "join-channel"
+	ACTION_LEAVE_CHANNEL   = "leave-channel"
+	ACTION_LEFT_CHANNEL    = "left-channel"
+	ACTION_JOINED_CHANNEL  = "joined-channel"
+	ACTION_PRIVATE_CHANNEL = "join-private-channel"
 
 	ACTION_SUBSCRIBER_JOINED = "subscriber-joined"
 	ACTION_SUBSCRIBER_LEFT   = "subscriber-left"
@@ -45,7 +44,7 @@ type Message struct {
 	RequestType    string      `json:"requesttype"`
 	RequestSubType string      `json:"requestsubtype"`
 	Message        string      `json:"message"`
-	ChannelName    string      `json:"channel"`
+	ChannelName    string      `json:"channelname"`
 	Session        *Session    `json:"session"`
 	Status         string      `json:"status"`
 }

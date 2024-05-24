@@ -90,20 +90,40 @@ func (m *SubscriberPgsql) Remove(subscriber model.ISubscriber) error {
 	return err
 }
 
+// Works only for subscribers - registered users
+func (m *SubscriberPgsql) GetLoginInfo(subscriber model.ISubscriber) (model.ISubscriber, error) {
+
+	sqlStmt := "SELECT name, password FROM subscriber where name = $1 LIMIT 1"
+
+	row := m.DbConn.QueryRow(sqlStmt, subscriber.GetName())
+
+	var subs Subscriber
+
+	err := row.Scan(&subs.Name, &subs.Password)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return &subs, nil
+}
+
 func (m *SubscriberPgsql) Get(subscriber model.ISubscriber) (model.ISubscriber, error) {
 
 	var sqlStmt string
 	if subscriber.(*Subscriber).Type == SUBSCRIBER_TYPE_ANONYMOUS {
 		sqlStmt = "SELECT id, name FROM transient where name = $1 LIMIT 1"
 	} else {
-		sqlStmt = "SELECT id, name, password, email FROM subscriber where name = $1 LIMIT 1"
+		sqlStmt = "SELECT id, name, email FROM subscriber where name = $1 LIMIT 1"
 	}
 
 	row := m.DbConn.QueryRow(sqlStmt, subscriber.GetName())
 
 	var subs Subscriber
 
-	err := row.Scan(&subs.Id, &subs.Name, &subs.Password, &subs.Email)
+	err := row.Scan(&subs.Id, &subs.Name, &subs.Email)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil

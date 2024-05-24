@@ -21,17 +21,6 @@ func Authenticate(fn http.HandlerFunc) http.HandlerFunc {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		//w.Header().Set("Access-Control-Allow-Origin", "*")
-		//w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		//w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
-		//// Check if the request method is OPTIONS (preflight request)
-		//if r.Method == "OPTIONS" {
-		//	// Respond with a 200 status code
-		//	w.WriteHeader(http.StatusOK)
-		//	return
-		//}
-
 		ep := r.URL.Path
 		if ep == "/login" {
 			// Login precedes authentication. Ignore
@@ -66,7 +55,7 @@ func Authenticate(fn http.HandlerFunc) http.HandlerFunc {
 			// Non-registered subscriber messaging
 			log.GetLogger().Debug("Process request: " + r.URL.RawQuery)
 
-			s_token, tok := r.URL.Query()["token"]
+			s_token, tok := r.URL.Query()["jwt"]
 			s_name, nok := r.URL.Query()["name"]
 			s_email, eok := r.URL.Query()["email"]
 

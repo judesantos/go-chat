@@ -64,7 +64,7 @@ func (m *Session) requestHandler() {
 	logger.Trace("Listen for subscriber messages...")
 
 	m.wsConn.SetReadLimit(MAX_MESSAGE_BUFFER_SIZE)
-	m.wsConn.SetReadDeadline(time.Now().Add(WRITE_DELAY))
+	m.wsConn.SetReadDeadline(time.Now().Add(PONG_INTERVAL))
 	m.wsConn.SetPongHandler(func(string) error {
 		m.wsConn.SetReadDeadline(time.Now().Add(PONG_INTERVAL))
 		return nil
@@ -85,7 +85,7 @@ func (m *Session) requestHandler() {
 			break
 		} else {
 			// Process incoming message
-			m.processRequest(msg)
+			m.processSubscriberRequest(msg)
 		}
 	}
 
@@ -181,7 +181,7 @@ func (m *Session) disconnect() {
 	logger.Trace("Session disconnect done.")
 }
 
-func (m *Session) processRequest(msg []byte) {
+func (m *Session) processSubscriberRequest(msg []byte) {
 
 	var message Message
 	logger.Trace("Received message: " + string(msg))
@@ -203,20 +203,21 @@ func (m *Session) processRequest(msg []byte) {
 	case ACTION_SEND_MESSAGE:
 
 		notInChannel := true
-		for ch := range m.channels {
+		var ch *Channel
+
+		for ch = range m.channels {
 			if ch.Name == message.ChannelName {
-				ch.broadcast <- &message
 				notInChannel = false
+				break
 			}
 		}
-
-		message.MessageType = MSGTYPE_ACK
 
 		if notInChannel {
 			// Session is not subscribed in the channel
 			// Inform subscriber as so.
-			message.Message = "Please subscribe to " + message.ChannelName
+			message.MessageType = MSGTYPE_ACK
 			message.Status = STATUS_FAILED
+			message.Message = "Please subscribe to " + message.ChannelName
 
 			encoded, err := message.Encode()
 			if err != nil {
@@ -225,19 +226,15 @@ func (m *Session) processRequest(msg []byte) {
 				m.Msg <- *encoded
 			}
 		} else {
-
-			message.Message = "Message sent to " + message.ChannelName
-			message.Status = STATUS_SUCCESS
-
-			encoded, err := message.Encode()
-			if err != nil {
-				logger.Error("Encoding failed: " + err.Error())
-			} else {
-				m.Msg <- *encoded
-			}
+			// Relay message from source subscriber to others.
+			logger.Debug("Sending message to " + ch.Name)
+			ch.broadcast <- &message
 		}
 
 	case ACTION_JOIN_CHANNEL:
+
+		// Send response to subscriber
+		//
 
 		message.MessageType = MSGTYPE_ACK
 		ok, err := m.joinChannel(message.ChannelName, message.Session.Subscriber)
@@ -255,23 +252,36 @@ func (m *Session) processRequest(msg []byte) {
 			} else {
 				m.Msg <- *encoded
 			}
+			return
 		} else if ok {
 			message.Message = "Welcome to " + message.ChannelName
-			message.RequestSubType = ACTION_JOINED_CHANNEL
 		} else {
 			message.Message = "Already joined " + message.ChannelName
-			message.RequestSubType = ACTION_JOINED_CHANNEL
 		}
 
 		message.Status = STATUS_SUCCESS
 		encoded, err := message.Encode()
 		if err != nil {
 			logger.Error("Encoding failed: " + err.Error())
+			return
 		} else {
 			m.Msg <- *encoded
 		}
 
+		// Broadcast event to all channel subscribers
+
+		for ch := range m.channels {
+			if ch.Name == message.ChannelName {
+				message.MessageType = MSGTYPE_BCAST
+				ch.broadcast <- &message
+				break
+			}
+		}
+
 	case ACTION_LEAVE_CHANNEL:
+
+		// Send response to subscriber
+		//
 
 		message.MessageType = MSGTYPE_ACK
 		err := m.leaveChannel(message.ChannelName)
@@ -289,7 +299,6 @@ func (m *Session) processRequest(msg []byte) {
 
 		} else {
 			message.Message = "Bye!"
-			message.RequestSubType = ACTION_LEFT_CHANNEL
 			message.Status = STATUS_SUCCESS
 
 			encoded, err := message.Encode()
@@ -297,6 +306,16 @@ func (m *Session) processRequest(msg []byte) {
 				logger.Error("Encoding failed: " + err.Error())
 			} else {
 				m.Msg <- *encoded
+			}
+		}
+
+		// Broadcast event to all channel subscribers
+
+		for ch := range m.channels {
+			if ch.Name == message.ChannelName {
+				message.MessageType = MSGTYPE_BCAST
+				ch.broadcast <- &message
+				break
 			}
 		}
 
@@ -359,6 +378,7 @@ func (m *Session) joinChannel(channelName string, subscriber model.ISubscriber) 
 		}
 
 		m.channels[channel] = true
+		channel.registerSession <- m
 	}
 
 	if subscriber == nil && channel.IsPrivate() {

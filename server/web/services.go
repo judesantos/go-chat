@@ -80,7 +80,7 @@ func onLogin(
 	}
 	// Find the user in the database by username
 	subscr.Type = datasource.SUBSCRIBER_TYPE_LOGIN
-	subs, err := subscriberDs.Get(&subscr)
+	subs, err := subscriberDs.(*datasource.SubscriberPgsql).GetLoginInfo(&subscr)
 
 	if err != nil {
 		log.GetLogger().Error(err.Error())
