@@ -45,21 +45,12 @@ func GetRoutes(
 	r := mux.NewRouter()
 
 	// Setup CORS permissions - allowed settings are found in dotenv config
-	if config.GetValue("ENV") == "development" {
-		// No restriction in dev.
-		c := cors.New(cors.Options{
-			AllowedOrigins:   []string{"*"},
-			AllowCredentials: true,
-		})
-		handler = c.Handler(r)
-	} else {
-		// Allow sites listed in dotenv config
-		c := cors.New(cors.Options{
-			AllowedOrigins:   []string{config.GetValue("ALLOWED_ORIGINS")},
-			AllowCredentials: true,
-		})
-		handler = c.Handler(r)
-	}
+	// Allow sites listed in dotenv config
+	c := cors.New(cors.Options{
+		AllowedOrigins:   []string{config.GetValue("ALLOWED_ORIGINS")},
+		AllowCredentials: true,
+	})
+	handler = c.Handler(r)
 
 	// Subscriber socket connection request
 	//
