@@ -12,15 +12,16 @@ import (
 //
 
 const (
-	ACTION_SEND_MESSAGE    = "send-msg"
-	ACTION_JOIN_CHANNEL    = "join-channel"
-	ACTION_LEAVE_CHANNEL   = "leave-channel"
-	ACTION_LEFT_CHANNEL    = "left-channel"
-	ACTION_JOINED_CHANNEL  = "joined-channel"
-	ACTION_PRIVATE_CHANNEL = "join-private-channel"
+	REQ_SEND_MESSAGE = "message"
 
-	ACTION_SUBSCRIBER_JOINED = "subscriber-joined"
-	ACTION_SUBSCRIBER_LEFT   = "subscriber-left"
+	REQ_JOIN_CHANNEL   = "join-channel"
+	REQ_LEAVE_CHANNEL  = "leave-channel"
+	REQ_JOINED_CHANNEL = "joined-channel"
+
+	REQ_SUBSCRIBER_JOINED = "subscriber-joined"
+	REQ_SUBSCRIBER_LEFT   = "subscriber-left"
+
+	REQ_JOIN_PRIVATE_CHANNEL = "join-private-channel"
 
 	STATUS_SUCCESS = "success"
 	STATUS_FAILED  = "failed"
@@ -39,14 +40,13 @@ const (
 // Id will determine which ack. for each req. message
 // MessageType will detect the source and direction of the message (client <-> server).
 type Message struct {
-	Id             uuid.UUID   `json:"id"`
-	MessageType    MessageType `json:"messagetype"`
-	RequestType    string      `json:"requesttype"`
-	RequestSubType string      `json:"requestsubtype"`
-	Message        string      `json:"message"`
-	ChannelName    string      `json:"channelname"`
-	Session        *Session    `json:"session"`
-	Status         string      `json:"status"`
+	Id          uuid.UUID   `json:"id"`
+	MessageType MessageType `json:"messagetype"`
+	RequestType string      `json:"requesttype"`
+	Message     string      `json:"message"`
+	ChannelName string      `json:"channelname"`
+	Session     *Session    `json:"session"`
+	Status      string      `json:"status"`
 }
 
 func NewMessage(messageType MessageType) *Message {

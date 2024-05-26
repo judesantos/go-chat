@@ -25,6 +25,8 @@ type Server struct {
 	rds               *redis.Client
 	ctx               context.Context
 	ctxCancel         context.CancelFunc
+
+	Stopping bool
 }
 
 func NewServer(
@@ -44,6 +46,7 @@ func NewServer(
 		rds:               rds,
 		ctx:               ctx,
 		ctxCancel:         cancel,
+		Stopping:          false,
 	}
 }
 
@@ -54,9 +57,7 @@ func (m *Server) Start() {
 func (m *Server) Stop() {
 
 	logger.Trace("Stopping server")
-
-	close(m.registerSession)
-	close(m.unregisterSession)
+	m.Stopping = true
 
 	// channels may still be online with no sessions/subscribers
 	// Shut down as well
@@ -67,8 +68,17 @@ func (m *Server) Stop() {
 		}
 	}
 	m.channels = nil
+	// Stop signed-in sessions not subscribed to any channel
+	for sess := range m.sessions {
+		m.unregisterSession <- sess
+		sess.disconnect()
+	}
+	m.sessions = nil
 
+	close(m.registerSession)
+	close(m.unregisterSession)
 	m.ctxCancel()
+
 	logger.Trace("Stop success!")
 }
 
@@ -113,11 +123,11 @@ func (m *Server) acceptSubscriberRequest() {
 					logger.Trace("Subscriber requestType: " + message.RequestType)
 
 					switch message.RequestType {
-					case ACTION_JOINED_CHANNEL:
+					case REQ_JOINED_CHANNEL:
 						m.joinedChannelRequest(message)
-					case ACTION_LEAVE_CHANNEL:
+					case REQ_LEAVE_CHANNEL:
 						m.leftChannelRequest(message)
-					case ACTION_PRIVATE_CHANNEL:
+					case REQ_JOIN_PRIVATE_CHANNEL:
 						m.joinPrivateChannel(message)
 					}
 				}
@@ -182,15 +192,14 @@ func (m *Server) registerSessionRequest(session *Session) error {
 	}
 
 	// Publish user in PubSub
-	message := &Message{
-		RequestType: ACTION_SUBSCRIBER_JOINED,
-		Session:     session,
-	}
-	ctx := context.Background()
+	message := NewMessage(MSGTYPE_BCAST)
+	message.RequestType = REQ_SUBSCRIBER_JOINED
+	message.Session = session
 	encoded, _ := message.Encode()
 	message = nil
 
 	// Publish to all session in main channel?
+	ctx := context.Background()
 	if err := m.rds.Publish(ctx, MAIN_CHANNEL, *encoded).Err(); err != nil {
 		logger.Error(err.Error())
 		return err
@@ -201,7 +210,7 @@ func (m *Server) registerSessionRequest(session *Session) error {
 	for _, sub := range m.subscribers {
 		if ok := uniqueSubs[sub.GetId()]; !ok {
 			message := &Message{
-				RequestType: ACTION_SUBSCRIBER_JOINED,
+				RequestType: REQ_SUBSCRIBER_JOINED,
 				Session:     session,
 			}
 			uniqueSubs[sub.GetId()] = true
@@ -225,17 +234,17 @@ func (m *Server) unregisterSessionRequest(session *Session) error {
 
 		logger.Trace("Unregister session: " + session.Subscriber.Name)
 		delete(m.sessions, session)
-		// Publish user left in PubSub
-		//message := Message{
-		//	RequestType: ACTION_SUBSCRIBER_LEFT,
-		//	Session:     session,
-		//}
-		//encoded, _ := message.Encode()
 
-		//ctx := context.Background()
-		//if err := m.rds.Publish(ctx, MAIN_CHANNEL, *encoded).Err(); err != nil {
-		//	logger.Error(err.Error())
-		//}
+		// Publish user left in PubSub
+		message := NewMessage(MSGTYPE_BCAST)
+		message.RequestType = REQ_SUBSCRIBER_LEFT
+		message.Session = session
+		encoded, _ := message.Encode()
+
+		ctx := context.Background()
+		if err := m.rds.Publish(ctx, MAIN_CHANNEL, *encoded).Err(); err != nil {
+			logger.Error(err.Error())
+		}
 	}
 
 	return nil

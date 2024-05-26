@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 )
 
-const WELCOME_MESSAGE_FORMAT = "%s joined %s"
+const WELCOME_MESSAGE_FORMAT = "%s joined."
 
 type Channel struct {
 	model.IChannel
@@ -81,9 +81,10 @@ func NewChannel(
 func (m *Channel) stop() {
 
 	m.stopping = true
-	close(m.registerSession)
-	close(m.unregisterSession)
-	close(m.broadcast)
+
+	for session := range m.sessions {
+		session.disconnect()
+	}
 
 	logger.Trace(fmt.Sprintf("Channel stop. sessions: %d", len(m.sessions)))
 	if len(m.sessions) == 0 {
@@ -91,6 +92,10 @@ func (m *Channel) stop() {
 		// Trigger when no session is active in channel
 		m.ctxCancel()
 	}
+
+	close(m.registerSession)
+	close(m.unregisterSession)
+	close(m.broadcast)
 
 	logger.Trace(fmt.Sprintf("Num. sessions left on shutdown: %d", len(m.sessions)))
 	m.stopped = true
@@ -183,10 +188,10 @@ func (m *Channel) Start() {
 					if !m.IsPrivate() {
 
 						message := NewMessage(MSGTYPE_BCAST)
-						message.RequestType = ACTION_SEND_MESSAGE
+						message.RequestType = REQ_SEND_MESSAGE
 						message.Session = session
 						message.ChannelName = m.Name
-						message.Message = fmt.Sprintf(WELCOME_MESSAGE_FORMAT, session.Subscriber.Name, m.Name)
+						message.Message = fmt.Sprintf(WELCOME_MESSAGE_FORMAT, session.Subscriber.Name)
 						encoded, _ := message.Encode()
 						message = nil
 
@@ -203,33 +208,23 @@ func (m *Channel) Start() {
 					}
 				}
 			// Leave channel
-			case session, ok := <-m.unregisterSession:
-				if ok {
-					// Session leaves channel
-					delete(m.sessions, session)
-					logger.Trace(
-						fmt.Sprintf(
-							"Unregister session. sessions: %d, stopping: %s",
-							len(m.sessions),
-							strconv.FormatBool(m.stopping),
-						),
-					)
-					// Check for shutdown request.
-					if m.stopping && len(m.sessions) == 0 {
-						// Main process is waiting for workers to cleanup and exit.
-						// Process all pending requests then stop workers.
-						m.ctxCancel()
-					}
-				}
+			case session := <-m.unregisterSession:
+				// Session leaves channel
+				delete(m.sessions, session)
+				logger.Trace(
+					fmt.Sprintf(
+						"Unregister session. sessions: %d, stopping: %s",
+						len(m.sessions),
+						strconv.FormatBool(m.stopping),
+					),
+				)
 			// Send request
 			case message, ok := <-m.broadcast:
 				if ok {
-					logger.Debug("New channel message: " + message.RequestType)
 					encoded, err := message.Encode()
 					if err != nil {
 						logger.Warn(err.Error())
 					} else {
-						logger.Trace(m.GetName() + ": Broadcast message to sessions")
 						err := m.rds.Publish(ctx, m.GetName(), *encoded).Err()
 						if err != nil {
 							logger.Error(err.Error())

@@ -23,13 +23,13 @@ const (
 
 type Session struct {
 	model.ISession `json:"-"`
-	Subscriber     *datasource.Subscriber
-	channels       map[*Channel]bool
-	wsConn         *websocket.Conn
-	wsSrvr         *Server
-	Msg            chan []byte `json:"-"`
+	Subscriber     *datasource.Subscriber `json:"subscriber"`
+	channels       map[*Channel]bool      `json:"-"`
+	wsConn         *websocket.Conn        `json:"-"`
+	wsSrvr         *Server                `json:"-"`
+	Msg            chan []byte            `json:"-"`
 
-	stop chan struct{}
+	//stop chan struct{}
 }
 
 func NewSession(
@@ -37,7 +37,7 @@ func NewSession(
 	wsConn *websocket.Conn,
 	subscriber *datasource.Subscriber,
 ) error {
-	logger.Info("Session::NewSession() creating session for: " + subscriber.Name)
+	logger.Info("Creating session for: " + subscriber.Name)
 
 	session := &Session{
 		Subscriber: subscriber,
@@ -45,16 +45,17 @@ func NewSession(
 		wsSrvr:     server,
 		Msg:        make(chan []byte),
 		channels:   make(map[*Channel]bool),
-		stop:       make(chan struct{}),
+		//stop:       make(chan struct{}),
 	}
 
-	mw := workermanager.GetInstance()
+	// Let WS server know that we exist
+	server.registerSession <- session
 
+	mw := workermanager.GetInstance()
 	mw.StartWorker(func() { session.responseHandler() }, "responseHandler")
 	mw.StartWorker(func() { session.requestHandler() }, "requestHandler")
 
-	server.registerSession <- session
-
+	logger.Info("Created session for: " + subscriber.Name)
 	return nil
 }
 
@@ -81,7 +82,8 @@ func (m *Session) requestHandler() {
 			} else {
 				logger.Error("WebSocket read error: " + err.Error())
 			}
-			m.disconnect()
+			// Client closed connection
+			//m.disconnect()
 			break
 		} else {
 			// Process incoming message
@@ -108,8 +110,8 @@ func (m *Session) responseHandler() {
 
 	for !stop {
 		select {
-		case <-m.stop:
-			stop = true
+		//case <-m.stop:
+		//	stop = true
 		case message, ok := <-m.Msg:
 			if !ok {
 				// The WsServer closed the channel.
@@ -145,10 +147,12 @@ func (m *Session) responseHandler() {
 				}
 			}
 		case <-ticker.C:
-			m.wsConn.SetWriteDeadline(time.Now().Add(WRITE_DELAY))
-			if err := m.wsConn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				logger.Error("Send ping error: " + err.Error())
-				stop = true
+			if !stop {
+				m.wsConn.SetWriteDeadline(time.Now().Add(WRITE_DELAY))
+				if err := m.wsConn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					logger.Error("Send ping error: " + err.Error())
+					stop = true
+				}
 			}
 		}
 	}
@@ -158,9 +162,8 @@ func (m *Session) responseHandler() {
 func (m *Session) disconnect() {
 
 	logger.Trace("Session disconnect: " + m.Subscriber.Name)
-
-	// Close the session message channel
-	m.stop <- struct{}{}
+	close(m.Msg)
+	m.Msg = nil
 
 	// Tell server we quit
 	m.wsSrvr.unregisterSession <- m
@@ -173,10 +176,10 @@ func (m *Session) disconnect() {
 	}
 	m.channels = nil // Hasten GC
 
-	close(m.Msg)
-	m.Msg = nil
-	close(m.stop)
-	m.stop = nil
+	// Close the session message channel
+	//m.stop <- struct{}{}
+	//close(m.stop)
+	//m.stop = nil
 
 	logger.Trace("Session disconnect done.")
 }
@@ -200,7 +203,7 @@ func (m *Session) processSubscriberRequest(msg []byte) {
 	message.Session = m
 
 	switch message.RequestType {
-	case ACTION_SEND_MESSAGE:
+	case REQ_SEND_MESSAGE:
 
 		notInChannel := true
 		var ch *Channel
@@ -231,7 +234,7 @@ func (m *Session) processSubscriberRequest(msg []byte) {
 			ch.broadcast <- &message
 		}
 
-	case ACTION_JOIN_CHANNEL:
+	case REQ_JOIN_CHANNEL:
 
 		// Send response to subscriber
 		//
@@ -260,6 +263,7 @@ func (m *Session) processSubscriberRequest(msg []byte) {
 		}
 
 		message.Status = STATUS_SUCCESS
+		message.RequestType = REQ_JOINED_CHANNEL
 		encoded, err := message.Encode()
 		if err != nil {
 			logger.Error("Encoding failed: " + err.Error())
@@ -268,17 +272,7 @@ func (m *Session) processSubscriberRequest(msg []byte) {
 			m.Msg <- *encoded
 		}
 
-		// Broadcast event to all channel subscribers
-
-		for ch := range m.channels {
-			if ch.Name == message.ChannelName {
-				message.MessageType = MSGTYPE_BCAST
-				ch.broadcast <- &message
-				break
-			}
-		}
-
-	case ACTION_LEAVE_CHANNEL:
+	case REQ_LEAVE_CHANNEL:
 
 		// Send response to subscriber
 		//
@@ -297,29 +291,9 @@ func (m *Session) processSubscriberRequest(msg []byte) {
 				m.Msg <- *encoded
 			}
 
-		} else {
-			message.Message = "Bye!"
-			message.Status = STATUS_SUCCESS
-
-			encoded, err := message.Encode()
-			if err != nil {
-				logger.Error("Encoding failed: " + err.Error())
-			} else {
-				m.Msg <- *encoded
-			}
 		}
 
-		// Broadcast event to all channel subscribers
-
-		for ch := range m.channels {
-			if ch.Name == message.ChannelName {
-				message.MessageType = MSGTYPE_BCAST
-				ch.broadcast <- &message
-				break
-			}
-		}
-
-	case ACTION_PRIVATE_CHANNEL:
+	case REQ_JOIN_PRIVATE_CHANNEL:
 		m.joinPrivateChannel(&message)
 	default:
 		logger.Warn("Unknown request received. Ignored message: " + string(msg))

@@ -59,7 +59,9 @@
               class="d-flex justify-content-start mb-1"
               >
               <div class="message-group">
-                <span class="message-name" v-if="message.sender">{{message.sender.name}}:</span>
+                <span class="message-name"
+                  v-if="message.sender">{{message.sender}}:
+                </span>
                   {{message.message}}
               </div>
             </div>
@@ -91,18 +93,19 @@ import axios from 'axios';
 const { v1: uuidv1 } = require('uuid');
 
 
-const	ACTION_MESSAGE         = "send-msg"
-const	ACTION_JOIN_CHANNEL    = "join-channel"
-const	ACTION_LEAVE_CHANNEL   = "leave-channel"
-const	ACTION_LEFT_CHANNEL    = "left-channel"
-const	ACTION_JOINED_CHANNEL  = "joined-channel"
-const	ACTION_PRIVATE_CHANNEL = "join-private-channel"
+const REQ_SEND_MESSAGE = "message";
+const REQ_JOIN_CHANNEL = "join-channel";
+const REQ_LEAVE_CHANNEL = "leave-channel";
+const REQ_JOINED_CHANNEL = "joined-channel";
+const REQ_SUBSCRIBER_JOINED = "subscriber-joined";
+const REQ_SUBSCRIBER_LEFT   = "subscriber-left";
+const REQ_JOIN_PRIVATE_CHANNEL = "join-private-channel";
 
-//const MESSAGE_TYPE = {
-//  REQ: 0,
-//  ACK: 1,
-//  BROADCAST: 2
-//}
+const MESSAGE_TYPE = {
+  REQ: 0,
+  ACK: 1,
+  BROADCAST: 2
+}
 
 const WAIT_TIMEOUT_LIMIT = 16000
 const SERVER_HOST = "http://localhost:8080"
@@ -211,7 +214,7 @@ const chatOperations = {
       this.wsConnect();
     } else {
       console.error("Reconnect failed: Connection wait timed out.")
-      this.reConnect()
+      this.loginError = "Connection Lost!"
     }
   },
 
@@ -220,33 +223,38 @@ const chatOperations = {
     let data = event.data;
     data = data.split(/\r?\n/);
 
-    console.log("wsMessage: " + data)
+    console.log("received message: " + data)
 
     for (let i = 0; i < data.length; i++) {
 
       let msg = JSON.parse(data[i]);
 
-      if (msg.messagetype != "1")
+      //if (msg.messagetype != "1")
         // non-ACK response?
-        continue;
+        //continue;
 
       switch (msg.requesttype) {
 
-        case ACTION_MESSAGE:
+        case REQ_SEND_MESSAGE:
 
-          console.log("ACTION_MESSAGE response: " + data[i])
           {
-            const channel = this.findChannel(msg.channelname);
-            if (typeof channel !== "undefined") {
-              channel.messages.push(msg);
+            let channel = this.findChannel(msg.channelname);
+            if (channel) {
+              let sender = msg.session.subscriber.name 
+              if (msg.messagetype != MESSAGE_TYPE.REQ) {
+                sender = msg.channelname
+              }
+              channel.messages.push({
+                sender,
+                message: msg.message
+              });
             }
           }
 
           break;
 
-        case ACTION_JOIN_CHANNEL:
+        case REQ_SUBSCRIBER_JOINED:
 
-          console.log("ACTION_JOIN_CHANNEL response: " + data[i])
           {
               if(!this.subscriberFound(msg.subscriber)) {
                 this.subscribers.push(msg.subscriber);
@@ -255,9 +263,8 @@ const chatOperations = {
 
           break;
 
-        case ACTION_LEFT_CHANNEL:
+        case REQ_SUBSCRIBER_LEFT:
 
-          console.log("ACTION_LEFT_CHANNEL response: " + data[i])
           {
             for (let i = 0; i < this.subscribers.length; i++) {
               if (this.subscribers[i].name == msg.subscriber.name) {
@@ -269,15 +276,24 @@ const chatOperations = {
 
           break;
 
-        case ACTION_JOINED_CHANNEL:
+        case REQ_JOINED_CHANNEL:
 
-          console.log("ACTION_JOINED_CHANNEL response: " + data[i])
           {
-            const channel = {
-              name: msg.channelname,
-              messages: []
+            if (!this.findChannel(msg.channelname)) {
+              const channel = {
+                name: msg.channelname,
+                messages: []
+              }
+              let sender = msg.session.subscriber.name 
+              if (msg.messagetype != MESSAGE_TYPE.REQ) {
+                sender = msg.channelname
+              }
+              channel.messages.push({
+                sender,
+                message: msg.message
+              })
+              this.channels.push(channel);
             }
-            this.channels.push(channel);
           }
 
           break;
@@ -291,13 +307,7 @@ const chatOperations = {
 
   doSendMessage(channel) {
     this.sendMessage(channel)
-    channel.messages.push({
-      message: channel.newMessage,
-      sender: {
-        name: this.subscriber.name
-      }
-    })
-    channel.newMessage = ""
+    channel.newMessage = ''
   },
 
   newMessage(reqType, channelName, message = '') {
@@ -316,21 +326,25 @@ const chatOperations = {
 
   sendMessage(channel) {
 
+    if (!this.wsock) {
+      this.loginError = "Connection lost. Please sign-in."
+    }
+
     if (channel.newMessage !== "") {
 
       let message = this.newMessage(
-        ACTION_MESSAGE,
+        REQ_SEND_MESSAGE,
         channel.name,
         channel.newMessage
       )
       this.wsock.send(message);
-    }
+    } 
   },
 
-  findChannel(channelId) {
+  findChannel(channelName) {
 
     for (let i = 0; i < this.channels.length; i++) {
-      if (this.channels[i].id === channelId) {
+      if (this.channels[i].name === channelName) {
         return this.channels[i];
       }
     }
@@ -340,21 +354,10 @@ const chatOperations = {
   joinChannel() {
 
     const message = this.newMessage(
-      ACTION_JOIN_CHANNEL,
+      REQ_JOIN_CHANNEL,
       this.channelName,
       "Hello " + this.channelName
     )
-    console.log("joinChannel send message: " + message)
-    let channel = this.findChannel(this.channelName);
-    if (channel == null) {
-      channel = {
-        name: this.channelName,
-        messages: []
-      };
-      console.log("add channel: " + this.channelname)
-      this.channels.push(channel);
-    }
-
     this.wsock.send(message);
     this.channelName = "";
   },
@@ -362,7 +365,7 @@ const chatOperations = {
   leaveChannel(channel) {
 
     const message = this.newMessage(
-      ACTION_LEAVE_CHANNEL,
+      REQ_LEAVE_CHANNEL,
       channel.name
     )
     console.log("leaveChannel send message: " + message)
@@ -380,7 +383,7 @@ const chatOperations = {
 
     console.log("joinPrivateChannel Send message: " + message)
     const message = this.newMessage(
-      ACTION_PRIVATE_CHANNEL,
+      REQ_JOIN_PRIVATE_CHANNEL,
       channel.name
     )
     this.wsock.send(message);

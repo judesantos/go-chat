@@ -36,6 +36,11 @@ func onSocketConnect(
 ) {
 	logger.Info("Start OnSocketConnect()")
 
+	if wsServer.Stopping {
+		sendErrorResponse(resp, "Connection refused.", http.StatusGone)
+		return
+	}
+
 	ctxValue := req.Context().Value(auth.CONTEXT_KEY)
 	if ctxValue == nil {
 		log.GetLogger().Error("Not authorized")
@@ -68,6 +73,11 @@ func onLogin(
 	subscriberDs model.ISubscriberDS,
 ) {
 	log.GetLogger().Debug("onLogin")
+
+	if wsServer.Stopping {
+		sendErrorResponse(resp, "Connection refused.", http.StatusGone)
+		return
+	}
 
 	var subscr datasource.Subscriber
 
