@@ -306,7 +306,7 @@ const chatOperations = {
   },
 
   doSendMessage(channel) {
-    this.sendMessage(channel)
+    this.sendMessage(channel, REQ_SEND_MESSAGE, channel.newMessage)
     channel.newMessage = ''
   },
 
@@ -315,7 +315,7 @@ const chatOperations = {
       id: uuidv1(),
       messagetype: 0, // Req.
       requesttype: reqType,
-      message: message,   
+      message,   
       channelname: channelName,    
       subscriber: {
         name: this.subscriber.name,
@@ -324,21 +324,19 @@ const chatOperations = {
     })
   },
 
-  sendMessage(channel) {
+  sendMessage(channel, reqType, msg = '') {
 
     if (!this.wsock) {
       this.loginError = "Connection lost. Please sign-in."
+      return
     }
 
-    if (channel.newMessage !== "") {
-
-      let message = this.newMessage(
-        REQ_SEND_MESSAGE,
-        channel.name,
-        channel.newMessage
-      )
-      this.wsock.send(message);
-    } 
+    let message = this.newMessage(
+      reqType,
+      channel.name,
+      msg
+    )
+    this.wsock.send(message);
   },
 
   findChannel(channelName) {
@@ -353,26 +351,17 @@ const chatOperations = {
 
   joinChannel() {
 
-    const message = this.newMessage(
-      REQ_JOIN_CHANNEL,
-      this.channelName,
-      "Hello " + this.channelName
-    )
-    this.wsock.send(message);
+    this.sendMessage(this.channelName, REQ_JOIN_CHANNEL, "Hello " + this.channelName)
     this.channelName = "";
   },
 
   leaveChannel(channel) {
 
-    const message = this.newMessage(
-      REQ_LEAVE_CHANNEL,
-      channel.name
-    )
-    console.log("leaveChannel send message: " + message)
-    this.wsock.send(message);
+    console.log("leaveChannel")
+    this.sendMessage(channel, REQ_LEAVE_CHANNEL)
 
     for (let i = 0; i < this.channels.length; i++) {
-      if (this.channels[i].id === channel.id) {
+      if (this.channels[i].name === channel.name) {
         this.channels.splice(i, 1);
         break;
       }
@@ -381,12 +370,8 @@ const chatOperations = {
 
   joinPrivateChannel(channel) {
 
-    console.log("joinPrivateChannel Send message: " + message)
-    const message = this.newMessage(
-      REQ_JOIN_PRIVATE_CHANNEL,
-      channel.name
-    )
-    this.wsock.send(message);
+    console.log("joinPrivateChannel")
+    this.sendMessage(channel, REQ_JOIN_PRIVATE_CHANNEL, channel.name)
   },
   
   subscriberFound(subscriber) {
