@@ -48,6 +48,7 @@ cd go-chat
 
   ```bash
   ENV=development
+  ALLOWED_ORIGINS=http://localhost:8081 // CORS allow list
 
   SERVER_HOST=server_domain_url
   SERVER_PORT=server_port
