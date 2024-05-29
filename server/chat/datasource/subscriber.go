@@ -60,7 +60,7 @@ func (m *SubscriberPgsql) Add(subscriber model.ISubscriber) error {
 	}()
 
 	if subscriber.(*Subscriber).Type == SUBSCRIBER_TYPE_ANONYMOUS {
-		_, err = stmt.Exec(subscriber.GetName())
+		_, err = stmt.Exec(subscriber.GetName(), subscriber.GetEmail())
 	} else {
 		_, err = stmt.Exec(subscriber.GetName(), subscriber.GetPassword(), subscriber.GetEmail())
 	}

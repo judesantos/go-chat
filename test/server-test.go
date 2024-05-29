@@ -18,9 +18,9 @@ import (
 const (
 	wsTarget = "ws://localhost:8080/ws"
 
-	MSG_JOIN_CHANNEL_FMT  = `{"id":"%s", "messagetype": 0, "requesttype":"join-channel", "channel":"%s", "message":"hello %s", "subscriber":{"name":"%s", "email":"jude@yourtechy.com"}}`
-	MSG_SEND_CHANNEL_FMT  = `{"id":"%s", "messagetype": 0, "requesttype":"send-msg", "channel":"%s", "message":"hello %s, how are you doing?", "subscriber":{"name":"%s", "email":"jude@yourtechy.com"}}`
-	MSG_LEAVE_CHANNEL_FMT = `{"id":"%s", "messagetype": 0, "requesttype":"leave-channel", "channel":"%s", "message":"goodbye, %s!", "subscriber":{"name":"%s", "email":"jude@yourtechy.com"}}`
+	MSG_JOIN_CHANNEL_FMT  = `{"id":"%s", "messagetype": 0, "requesttype":"` + chat.REQ_JOIN_CHANNEL + `", "channelname":"%s", "message":"hello %s", "subscriber":{"name":"%s", "email":"jude@yourtechy.com"}}`
+	MSG_SEND_CHANNEL_FMT  = `{"id":"%s", "messagetype": 0, "requesttype":"` + chat.REQ_SEND_MESSAGE + `", "channelname":"%s", "message":"hello %s, how are you doing?", "subscriber":{"name":"%s", "email":"jude@yourtechy.com"}}`
+	MSG_LEAVE_CHANNEL_FMT = `{"id":"%s", "messagetype": 0, "requesttype":"` + chat.REQ_LEAVE_CHANNEL + `", "channelname":"%s", "message":"goodbye, %s!", "subscriber":{"name":"%s", "email":"jude@yourtechy.com"}}`
 )
 
 var logger = log.GetLogger()
@@ -91,7 +91,11 @@ func processResponseMessage(config *TestConfigData) {
 			break
 		}
 
-		config.msgCh <- &message
+		if message.MessageType != chat.MSGTYPE_BCAST {
+			msg, _ := message.Encode()
+			logger.Debug("Received message: " + string(*msg))
+			config.msgCh <- &message
+		}
 	}
 }
 
@@ -102,7 +106,6 @@ func validateResponse(send *string, outMsg *chat.Message) bool {
 	inMsg.Decode(send)
 
 	if inMsg.Id == outMsg.Id &&
-		inMsg.RequestType == outMsg.RequestType &&
 		outMsg.MessageType == chat.MSGTYPE_ACK &&
 		outMsg.Status == "success" {
 
@@ -126,13 +129,25 @@ func sendMessageWaitForResponse(config *TestConfigData, msg string) (*chat.Messa
 		return nil, err
 	}
 
-	// Wait for response.
+	// Wait for response ACK.
 	// Block until response received.
-	select {
-	case resp := <-config.msgCh:
-		return resp, nil
-	case <-config.wsError:
-		return nil, err
+	for {
+		select {
+		case resp, ok := <-config.msgCh:
+			if ok {
+				//msg, _ := resp.Encode()
+				//logger.Debug("Received message from server:" + string(*msg))
+				// Broadcast messages are sent async to all other messages.
+				// Ignore BCAST messages - it is intented for other parties on the same channel.
+				if resp.MessageType == chat.MSGTYPE_ACK {
+					return resp, nil
+				}
+			} else {
+				logger.Debug("Connection closed.")
+			}
+		case <-config.wsError:
+			return nil, err
+		}
 	}
 }
 
@@ -189,7 +204,8 @@ func joinChannelForSubscriber(config *TestConfigData, channel string, user strin
 		return false
 	}
 
-	// TODO: server closes connection too early. Check.
+	// TODO: server closes connection too early - crashes server.
+	// We need to prevent this from happening - ever.
 	//
 	timer := time.NewTimer(5 * time.Millisecond)
 	<-timer.C
@@ -204,6 +220,10 @@ func joinChannelForSubscriber(config *TestConfigData, channel string, user strin
 		logger.Error("Failed to send 'leave-channel' message: " + err.Error())
 		return false
 	}
+
+	respString, _ := resp.Encode()
+
+	logger.Debug("Leave response: " + string(*respString))
 
 	if !validateResponse(&msg, resp) {
 		logger.Error("Leave channel request failed.")
@@ -230,8 +250,6 @@ func runTest(cfg *TestConfigData) TestStatus {
 		logger.Warn("Closing socket connection")
 		cfg.conn.Close()
 
-		close(cfg.msgCh)
-		close(cfg.wsError)
 	}()
 
 	go processResponseMessage(cfg)
@@ -245,6 +263,9 @@ func runTest(cfg *TestConfigData) TestStatus {
 
 	timer.Stop()
 	logger.Debug(fmt.Sprintf("Test elapsed(ms): %.03f", timer.ElapsedMs()))
+
+	close(cfg.msgCh)
+	close(cfg.wsError)
 
 	cfg.passedTests++
 	return STATUS_SUCCESS

@@ -79,11 +79,11 @@ func (m *Session) requestHandler() {
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
 				logger.Error("WebSocket close error: " + err.Error())
+				// Client closed connection
+				m.disconnect()
 			} else {
 				logger.Error("WebSocket read error: " + err.Error())
 			}
-			// Client closed connection
-			//m.disconnect()
 			break
 		} else {
 			// Process incoming message
@@ -229,8 +229,20 @@ func (m *Session) processSubscriberRequest(msg []byte) {
 				m.Msg <- *encoded
 			}
 		} else {
-			// Relay message from source subscriber to others.
+			// Send response to client
+			message.MessageType = MSGTYPE_ACK
+			message.Status = STATUS_SUCCESS
+
+			encoded, err := message.Encode()
+			if err != nil {
+				logger.Error("Encoding failed: " + err.Error())
+			} else {
+				m.Msg <- *encoded
+			}
+
+			// broadcast to other subscribers.
 			logger.Debug("Sending message to " + ch.Name)
+			message.MessageType = MSGTYPE_BCAST
 			ch.broadcast <- &message
 		}
 
@@ -262,8 +274,9 @@ func (m *Session) processSubscriberRequest(msg []byte) {
 			message.Message = "Already joined " + message.ChannelName
 		}
 
-		message.Status = STATUS_SUCCESS
 		message.RequestType = REQ_JOINED_CHANNEL
+		message.Status = STATUS_SUCCESS
+
 		encoded, err := message.Encode()
 		if err != nil {
 			logger.Error("Encoding failed: " + err.Error())
@@ -278,19 +291,20 @@ func (m *Session) processSubscriberRequest(msg []byte) {
 		//
 
 		message.MessageType = MSGTYPE_ACK
-		err := m.leaveChannel(message.ChannelName)
+		message.Message = "Leave channel success"
+		message.Status = STATUS_SUCCESS
 
+		encoded, err := message.Encode()
 		if err != nil {
-			message.Message = "Failed to leave " + message.ChannelName
-			message.Status = STATUS_FAILED
+			logger.Error("Encoding failed: " + err.Error())
+			return
+		} else {
+			m.Msg <- *encoded
+		}
 
-			encoded, err := message.Encode()
-			if err != nil {
-				logger.Error("Encoding failed: " + err.Error())
-			} else {
-				m.Msg <- *encoded
-			}
-
+		err = m.leaveChannel(message.ChannelName)
+		if err != nil {
+			logger.Error("Failed to leave " + message.ChannelName + ": " + err.Error())
 		}
 
 	case REQ_JOIN_PRIVATE_CHANNEL:
