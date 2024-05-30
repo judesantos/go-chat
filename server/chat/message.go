@@ -40,13 +40,14 @@ const (
 // Id will determine which ack. for each req. message
 // MessageType will detect the source and direction of the message (client <-> server).
 type Message struct {
-	Id          uuid.UUID   `json:"id"`
-	MessageType MessageType `json:"messagetype"`
-	RequestType string      `json:"requesttype"`
-	Message     string      `json:"message"`
-	ChannelName string      `json:"channelname"`
-	Session     *Session    `json:"session"`
-	Status      string      `json:"status"`
+	Id             uuid.UUID   `json:"id"`
+	MessageType    MessageType `json:"messagetype"`
+	RequestType    string      `json:"requesttype"`
+	RequestSubType string      `json:"requestsubtype"`
+	Message        string      `json:"message"`
+	ChannelName    string      `json:"channelname"`
+	Session        *Session    `json:"session"`
+	Status         string      `json:"status"`
 }
 
 func NewMessage(messageType MessageType) *Message {

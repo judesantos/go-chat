@@ -135,8 +135,6 @@ func sendMessageWaitForResponse(config *TestConfigData, msg string) (*chat.Messa
 		select {
 		case resp, ok := <-config.msgCh:
 			if ok {
-				//msg, _ := resp.Encode()
-				//logger.Debug("Received message from server:" + string(*msg))
 				// Broadcast messages are sent async to all other messages.
 				// Ignore BCAST messages - it is intented for other parties on the same channel.
 				if resp.MessageType == chat.MSGTYPE_ACK {

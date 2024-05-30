@@ -191,6 +191,7 @@ func (m *Channel) Start() {
 						message.RequestType = REQ_SEND_MESSAGE
 						message.Session = session
 						message.ChannelName = m.Name
+						message.RequestSubType = REQ_JOINED_CHANNEL
 						message.Message = fmt.Sprintf(WELCOME_MESSAGE_FORMAT, session.Subscriber.Name)
 						encoded, _ := message.Encode()
 						message = nil
