@@ -18,7 +18,7 @@
       @newChannel="newChannel"
     />
     <Chat v-if="wsock" :channel="selectedChannel" :messages="selectedChannel.messages" 
-      @SendMessage="addMessage"
+      @sendMessage="addMessage"
     />
   </div>
 </template>
@@ -95,7 +95,10 @@
 
     addMessage(objMsg) {
       this.selectedChannel.newMessage = objMsg.message
-      this.selectedChannel.messages.push(objMsg.message)
+      this.selectedChannel.messages.push({
+        sender: this.subscriber.name,
+        message: objMsg.message
+      })
       this.doSendMessage(this.selectedChannel)
     },
 
@@ -227,10 +230,12 @@
                   if (msg.requestsubtype === REQ_JOINED_CHANNEL) {
                     sender = msg.channelname
                   }
-                  channel.messages.push({
-                    sender,
-                    message: msg.message
-                  });
+                  if (msg.session.subscriber.name !== this.subscriber.name) {
+                    channel.messages.push({
+                      sender,
+                      message: msg.message
+                    });
+                  }
                 } else if (msg.messagetype !== MESSAGE_TYPE.ACK) {
                   channel.messages.push({
                     sender,
