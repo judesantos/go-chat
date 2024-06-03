@@ -29,7 +29,7 @@ type Session struct {
 	wsSrvr         *Server                `json:"-"`
 	Msg            chan []byte            `json:"-"`
 
-	//stop chan struct{}
+	stop chan struct{}
 }
 
 func NewSession(
@@ -45,7 +45,7 @@ func NewSession(
 		wsSrvr:     server,
 		Msg:        make(chan []byte),
 		channels:   make(map[*Channel]bool),
-		//stop:       make(chan struct{}),
+		stop:       make(chan struct{}),
 	}
 
 	// Let WS server know that we exist
@@ -78,11 +78,13 @@ func (m *Session) requestHandler() {
 		_, msg, err := m.wsConn.ReadMessage()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway) {
+				// Client sent explicit socket Close().
 				logger.Error("WebSocket close error: " + err.Error())
-				// Client closed connection
 				m.disconnect()
 			} else {
+				// Socket disconnected prematurely or closed by server.
 				logger.Error("WebSocket read error: " + err.Error())
+				m.stopWorker()
 			}
 			break
 		} else {
@@ -110,8 +112,9 @@ func (m *Session) responseHandler() {
 
 	for !stop {
 		select {
-		//case <-m.stop:
-		//	stop = true
+		case <-m.stop:
+			logger.Trace("Stop signal received.")
+			stop = true
 		case message, ok := <-m.Msg:
 			if !ok {
 				// The WsServer closed the channel.
@@ -159,6 +162,16 @@ func (m *Session) responseHandler() {
 	logger.Trace("Going away. Bye!")
 }
 
+func (m *Session) stopWorker() {
+	select {
+	case m.stop <- struct{}{}:
+	default:
+		// closed
+	}
+	close(m.stop)
+	m.stop = nil
+}
+
 func (m *Session) disconnect() {
 
 	logger.Trace("Session disconnect: " + m.Subscriber.Name)
@@ -167,6 +180,8 @@ func (m *Session) disconnect() {
 
 	// Tell server we quit
 	m.wsSrvr.unregisterSession <- m
+	logger.Trace("closing channels")
+	// Tell channel we are gone
 	for chn := range m.channels {
 		select {
 		case chn.unregisterSession <- m:
@@ -175,11 +190,6 @@ func (m *Session) disconnect() {
 		}
 	}
 	m.channels = nil // Hasten GC
-
-	// Close the session message channel
-	//m.stop <- struct{}{}
-	//close(m.stop)
-	//m.stop = nil
 
 	logger.Trace("Session disconnect done.")
 }

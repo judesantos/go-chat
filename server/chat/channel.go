@@ -82,8 +82,10 @@ func (m *Channel) stop() {
 
 	m.stopping = true
 
-	for session := range m.sessions {
-		session.disconnect()
+	for session, ok := range m.sessions {
+		if ok {
+			session.leaveChannel(m.Name)
+		}
 	}
 
 	logger.Trace(fmt.Sprintf("Channel stop. sessions: %d", len(m.sessions)))
@@ -91,6 +93,8 @@ func (m *Channel) stop() {
 		logger.Trace("Sending shutdown request")
 		// Trigger when no session is active in channel
 		m.ctxCancel()
+	} else {
+		logger.Warn("Cannot shutdown channel. Sessions are active")
 	}
 
 	close(m.registerSession)
@@ -157,6 +161,8 @@ func (m *Channel) Start() {
 						logger.Debug("Send message to session: " + sess.Subscriber.Name)
 						sess.Msg <- []byte(msg.Payload)
 					}
+				} else {
+					logger.Warn("Got a pubsub message close channel?")
 				}
 			}
 		}
@@ -182,7 +188,7 @@ func (m *Channel) Start() {
 				terminate = true
 			// Join channel request
 			case session, ok := <-m.registerSession:
-				if ok {
+				if ok && !m.stopping {
 					logger.Trace("Register session: " + session.Subscriber.Name + " in channel: " + m.Name)
 					// Send a welcome message to non-private channel
 					if !m.IsPrivate() {
@@ -204,9 +210,7 @@ func (m *Channel) Start() {
 							terminate = true
 						}
 					}
-					if !terminate {
-						m.sessions[session] = true
-					}
+					m.sessions[session] = true
 				}
 			// Leave channel
 			case session := <-m.unregisterSession:
@@ -221,17 +225,20 @@ func (m *Channel) Start() {
 				)
 			// Send request
 			case message, ok := <-m.broadcast:
-				if ok {
+				if ok && !m.stopping {
 					encoded, err := message.Encode()
 					if err != nil {
 						logger.Warn(err.Error())
 					} else {
+						logger.Debug("Received broadcast message: " + string(*encoded))
 						err := m.rds.Publish(ctx, m.GetName(), *encoded).Err()
 						if err != nil {
 							logger.Error(err.Error())
 							terminate = true
 						}
 					}
+				} else {
+					logger.Warn("broadcast message not OK.")
 				}
 			}
 		}

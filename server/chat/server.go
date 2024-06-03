@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"fmt"
 	"yt/chat/lib/utils/log"
 	"yt/chat/lib/workermanager"
 	"yt/chat/server/chat/datasource"
@@ -59,8 +60,6 @@ func (m *Server) Stop() {
 	logger.Trace("Stopping server")
 	m.Stopping = true
 
-	// channels may still be online with no sessions/subscribers
-	// Shut down as well
 	for ch := range m.channels {
 		logger.Trace("Closing channel: " + ch.GetName())
 		if !ch.(*Channel).stopped {
@@ -68,9 +67,9 @@ func (m *Server) Stop() {
 		}
 	}
 	m.channels = nil
-	// Stop signed-in sessions not subscribed to any channel
+	logger.Debug(fmt.Sprintf("Num. sessions: %d", len(m.sessions)))
+	// There may be sessions not joined to a channel. Stop as well.
 	for sess := range m.sessions {
-		m.unregisterSession <- sess
 		sess.disconnect()
 	}
 	m.sessions = nil
@@ -107,7 +106,8 @@ func (m *Server) acceptSubscriberRequest() {
 	for !terminate {
 		select {
 		case msg, ok := <-ch:
-			if ok {
+			if ok && !terminate {
+
 				var message Message
 				logger.Trace(msg.Payload)
 
@@ -117,19 +117,16 @@ func (m *Server) acceptSubscriberRequest() {
 					terminate = true
 				}
 
-				if !terminate {
+				logger.Trace("Subscriber request: " + message.Session.Subscriber.Name)
+				logger.Trace("Subscriber requestType: " + message.RequestType)
 
-					logger.Trace("Subscriber request: " + message.Session.Subscriber.Name)
-					logger.Trace("Subscriber requestType: " + message.RequestType)
-
-					switch message.RequestType {
-					case REQ_JOINED_CHANNEL:
-						m.joinedChannelRequest(message)
-					case REQ_LEAVE_CHANNEL:
-						m.leftChannelRequest(message)
-					case REQ_JOIN_PRIVATE_CHANNEL:
-						m.joinPrivateChannel(message)
-					}
+				switch message.RequestType {
+				case REQ_JOINED_CHANNEL:
+					m.joinedChannelRequest(message)
+				case REQ_LEAVE_CHANNEL:
+					m.leftChannelRequest(message)
+				case REQ_JOIN_PRIVATE_CHANNEL:
+					m.joinPrivateChannel(message)
 				}
 			}
 		case <-m.ctx.Done():
@@ -235,15 +232,17 @@ func (m *Server) unregisterSessionRequest(session *Session) error {
 		logger.Trace("Unregister session: " + session.Subscriber.Name)
 		delete(m.sessions, session)
 
-		// Publish user left in PubSub
-		message := NewMessage(MSGTYPE_BCAST)
-		message.RequestType = REQ_SUBSCRIBER_LEFT
-		message.Session = session
-		encoded, _ := message.Encode()
+		if !m.Stopping { // Server is stopping. No need to broadcast
+			// Publish user left in PubSub
+			message := NewMessage(MSGTYPE_BCAST)
+			message.RequestType = REQ_SUBSCRIBER_LEFT
+			message.Session = session
+			encoded, _ := message.Encode()
 
-		ctx := context.Background()
-		if err := m.rds.Publish(ctx, MAIN_CHANNEL, *encoded).Err(); err != nil {
-			logger.Error(err.Error())
+			ctx := context.Background()
+			if err := m.rds.Publish(ctx, MAIN_CHANNEL, *encoded).Err(); err != nil {
+				logger.Error(err.Error())
+			}
 		}
 	}
 

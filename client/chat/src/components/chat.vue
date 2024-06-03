@@ -34,6 +34,7 @@ export default {
       if (newMessage.length) {
         this.$emit('sendMessage', {message: newMessage})
       }
+      this.newMessage = ''
     }
   }
 }
