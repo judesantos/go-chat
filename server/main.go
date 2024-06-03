@@ -142,6 +142,15 @@ func main() {
 
 	logger.Info("Received interrupt signal. Shutting down...")
 
+	// Create a new context for the server
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// No more requests.
+	if err := httpServer.Shutdown(ctx); err != nil {
+		logger.Fatal("Error shutting down server: " + err.Error())
+		os.Exit(-1)
+	}
+
 	// Shutdown service, wait and complete ongoing tasks
 	wsServer.Stop()
 
@@ -151,15 +160,6 @@ func main() {
 
 	logger.Info("All tasks completed.")
 	logger.Info("Shutting down http server...")
-
-	// Create a new context for the server
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	if err := httpServer.Shutdown(ctx); err != nil {
-		logger.Fatal("Error shutting down server: " + err.Error())
-		os.Exit(-1)
-	}
 
 	logger.Info("Server stopped! goodbye.")
 }
