@@ -22,7 +22,11 @@
               @keyup.enter.exact="login"/>
         </div>
         <div class="form-group submit">
-          <button type="submit" class="btn btn-primary btn-block">Login</button>
+          <button type="submit" class="btn btn-primary btn-block"
+            @click="login"
+          >
+            Login
+          </button>
         </div>
       </div>
     </div>
@@ -82,6 +86,7 @@
       subscribers: [],
 
       wsock: null,
+      loggedOut: false,
 
       loginError: "",
       waitTimeout: 0,
@@ -118,10 +123,30 @@
     },
 
     async logout() {
-      console.log('logout')
+
+      for (let channel of this.channels) {
+        this.leaveChannel(channel)
+      }
+
+      this.selectedChannel = {}
+      this.channels = []
+
+      this.subscriber.name = ''
+      this.subscriber.password = ''
+
+      if (this.wsock) {
+
+        this.loggedOut = true
+
+        this.wsock.close()
+        this.wsock = null
+
+      }
     },
 
     async login() {
+
+      this.loggedOut = false;
 
       try {
 
@@ -171,6 +196,7 @@
 
       if (this.wsock) {
 
+
         this.wsock.addEventListener('error', (e) => { 
           console.error(e)
           this.wsock = null;
@@ -197,6 +223,9 @@
     },
 
     reConnect() {
+
+      if (this.loggedOut)
+        return
 
       console.log("RECONNECT")
 
