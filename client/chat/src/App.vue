@@ -3,7 +3,9 @@
     <div class="col-12 form" v-if="!wsock">
       <div class="input-group">
         <input v-model="subscriber.name" class="form-control subscribername" placeholder="Subscriber Name"/>
-        <input v-model="subscriber.password" type="password" class="form-control password" placeholder="password"/>
+        <input v-model="subscriber.password" 
+          type="password" class="form-control password" placeholder="password"
+            @keyup.enter.exact="login"/>
 
         <div class="input-group-append">
           <span class="input-group-text submit-button" @click="login">
@@ -12,12 +14,14 @@
         </div>
       </div>
     </div>
-    <Sidebar v-if="wsock" :channels="channels" 
+    <Sidebar v-if="wsock" 
+      :channels="channels" 
       @channelSelected="selectChannel" 
       @channelRemoved="leaveAndRemoveChannel"
       @newChannel="newChannel"
+      @logout="logout"
     />
-    <Chat v-if="wsock" :channel="selectedChannel" :messages="selectedChannel.messages" 
+    <Chat v-if="wsock" :channel="selectedChannel" 
       @sendMessage="addMessage"
     />
   </div>
@@ -49,27 +53,9 @@
   const SERVER_HOST = "http://localhost:8080"
   const SOCKET_HOST = "ws://localhost:8080/ws"
 
-  const channels = [
-    {
-      name: "general",
-      messages: [
-        { sender: 'User1', message: 'Hello, everyone!' },
-        { sender: 'User2', message: 'Hi User1!' }
-      ]
-    }, {
-      name: "random",
-      messages: [
-        { sender: 'User3', message: 'Random chat!' }
-      ]
-    }, {
-      name: "project",
-      messages: [
-        { sender: 'User4', message: 'Project discussion here.' }
-      ]
-    }
-  ]
+  const channels = []
   const chatData = {
-      selectedChannel: channels[0],
+      selectedChannel: {},
       channelName: null,
       subscriber: {
         id: "",
@@ -110,8 +96,17 @@
 
     leaveAndRemoveChannel(channel) {
       this.leaveChannel(channel)
+      if (this.channels.length) {
+        this.selectedChannel = this.channels[this.channels.length - 1]
+      } else {
+        this.selectedChannel = {}
+      }
     },
 
+    async logout() {
+      console.log('logout')
+    },
+    
     async login() {
 
       try {
@@ -356,7 +351,6 @@
 
     leaveChannel(channel) {
 
-      console.log("leaveChannel")
       this.sendMessage(channel.name, REQ_LEAVE_CHANNEL)
 
       for (let i = 0; i < this.channels.length; i++) {
