@@ -1,19 +1,32 @@
 <template>
   <div class="container">
-    <div class="col-12 form" v-if="!wsock">
-      <div class="input-group">
-        <input v-model="subscriber.name" class="form-control subscribername" placeholder="Subscriber Name"/>
-        <input v-model="subscriber.password" 
-          type="password" class="form-control password" placeholder="password"
-            @keyup.enter.exact="login"/>
-
-        <div class="input-group-append">
-          <span class="input-group-text submit-button" @click="login">
-            Sign-in
-          </span>
+    <div class="login-container" v-if="!wsock">
+      <div class="login-form">
+        <h2 class="text-center">Login</h2>
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input
+              type="text"
+              class="form-control" 
+              placeholder="Enter username"
+              v-model="subscriber.name" 
+            />
+        </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input 
+              type="password"
+              class="form-control"
+              placeholder="Enter password" 
+              v-model="subscriber.password" 
+              @keyup.enter.exact="login"/>
+        </div>
+        <div class="form-group submit">
+          <button type="submit" class="btn btn-primary btn-block">Login</button>
         </div>
       </div>
     </div>
+
     <Sidebar v-if="wsock" 
       :channels="channels" 
       @channelSelected="selectChannel" 
@@ -21,6 +34,7 @@
       @newChannel="newChannel"
       @logout="logout"
     />
+
     <Chat v-if="wsock" :channel="selectedChannel" 
       @sendMessage="addMessage"
     />
@@ -106,7 +120,7 @@
     async logout() {
       console.log('logout')
     },
-    
+
     async login() {
 
       try {
@@ -424,4 +438,36 @@ body {
   margin: 0;
   max-width: none;
 }
+
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%; 
+  height: 100vh;
+}
+
+.login-form {
+  width: 100%;
+  max-width: 400px;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  background-color: #f7f7f7;
+}
+
+.form-group {
+  margin: 10px;
+}
+
+.form-group label {
+  margin: 5px 0;
+}
+
+.submit {
+  padding-top: 5px;
+  display: flex;
+  justify-content: end;
+}
+
 </style>
