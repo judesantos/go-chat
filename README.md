@@ -33,7 +33,7 @@ The chat server is a WebSocket-based service designed with a channels-for-multip
 ### Prerequisites
 
 - Go installed on your machine. You can download and install Go from [here](https://golang.org/dl/).
-- sqlite
+- pgsql
 
 ### Clone the Repository
 
