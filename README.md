@@ -25,7 +25,7 @@ The chat server is a WebSocket-based service designed with a channels-for-multip
 - WebSocket (gorilla/websocket)
 - HTTP Router (gorilla/mux)
 - JSON Web Tokens (jwt-go)
-- Sqlite
+- Pgsql
 - Redis
 
 ## Installation
